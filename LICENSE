@@ -1,0 +1,86 @@
+LXTranslator Proprietary License
+
+Copyright (c) 2026 Jetsada Wijit. All rights reserved.
+
+Software: LXTranslator Server (server-expressjs)
+Creator: Jetsada Wijit
+Reserved for: LXTranslator (https://github.com/LXTranslator)
+
+1. Ownership
+
+This software, including its source code, object code, documentation,
+configuration, design assets, and any accompanying materials (collectively, the
+"Software"), is the exclusive property of Jetsada Wijit and is licensed, not
+sold. All right, title, and interest in and to the Software, including all
+intellectual property rights, remain with the copyright holder.
+
+2. Grant of Use
+
+Use of the Software is reserved exclusively for the organization LXTranslator
+(https://github.com/LXTranslator) and for persons expressly authorized in
+writing by the copyright holder. No other person or entity is granted any right
+to use, access, execute, or retain a copy of the Software.
+
+3. Prohibited Actions
+
+Without the prior written consent of the copyright holder, you may NOT:
+
+a. Share, publish, disclose, or otherwise make the Software available to any
+   third party, in whole or in part, by any means or medium.
+b. Distribute, sublicense, lease, lend, rent, host, or provide the Software as
+   a service to any third party.
+c. Sell, resell, offer for sale, or otherwise commercially exploit the Software
+   or any derivative of it.
+d. Reverse engineer, decompile, disassemble, decrypt, or otherwise attempt to
+   derive the source code, algorithms, or underlying structure of the Software,
+   except to the extent such restriction is expressly prohibited by applicable
+   law.
+e. Modify, adapt, translate, or create derivative works based on the Software.
+f. Remove, alter, or obscure any copyright, trademark, or other proprietary
+   notice contained in the Software.
+g. Use the Software to develop a competing or substantially similar product or
+   service.
+
+4. Financial Data
+
+The Software is intended for use in a financial context and may process
+confidential, regulated, or personally identifiable information. Authorized
+users must handle all such data in accordance with applicable law and with the
+security controls documented for the Software. Any unauthorized access,
+extraction, or disclosure of data processed by the Software is strictly
+prohibited.
+
+5. Confidentiality
+
+The Software constitutes confidential and proprietary information of the
+copyright holder. Authorized users must take at least reasonable measures to
+protect it from unauthorized access or disclosure, and must not disclose it to
+any person who is not an authorized user.
+
+6. Termination
+
+This license terminates automatically and immediately upon any breach of these
+terms, or upon written notice from the copyright holder. Upon termination, you
+must cease all use of the Software and permanently destroy every copy of it in
+your possession or control.
+
+7. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT.
+
+8. Limitation of Liability
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+9. Governing Terms
+
+Any rights not expressly granted in this license are reserved by the copyright
+holder. If any provision of this license is held unenforceable, the remaining
+provisions remain in full force and effect.
+
+For licensing inquiries, contact the copyright holder: Jetsada Wijit.
