@@ -262,6 +262,26 @@ namespace.
 { "display_name": "Acme Corporation", "description": "...", "website_url": "https://acme.com" }
 ```
 
+### `DELETE /namespaces/:namespace`
+
+Permanently deletes an organization namespace and everything under it: its
+membership rows, projects, files, translation keys and translations.
+
+```json
+{ "confirm_user_id": "acme_corp" }
+```
+
+Three guards apply:
+
+* **Owner only.** `ADMIN` is deliberately not sufficient, so a 403 is returned.
+* **The identifier must be echoed.** `confirm_user_id` must equal the
+  namespace's own `user_id`, otherwise **400**. This makes a misdirected delete
+  far harder than a bare confirmation would.
+* **Personal namespaces are refused** with **400**. Deleting one would mean
+  deleting the account, which is a separate flow.
+
+Returns **204** on success. The identifier becomes available for reuse.
+
 ### `GET /namespaces/:namespace/settings/members`
 
 Lists membership.

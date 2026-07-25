@@ -84,6 +84,25 @@ router.patch(
   }),
 );
 
+/**
+ * Permanently deletes an organization namespace.
+ *
+ * Owner only, and the caller must echo the organization identifier in the body.
+ * The cascade removes every project, file and translation underneath.
+ */
+router.delete(
+  '/:namespace',
+  validate(orgSchemas.deleteOrganizationSchema),
+  asyncHandler(async (req, res) => {
+    await orgService.deleteOrganization({
+      namespace: req.namespace,
+      role: req.namespaceRole,
+      input: req.body,
+    });
+    res.status(204).send();
+  }),
+);
+
 /** Organization membership. */
 router.get(
   '/:namespace/settings/members',

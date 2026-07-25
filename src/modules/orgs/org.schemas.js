@@ -36,9 +36,27 @@ const addMemberSchema = z
 
 const updateMemberSchema = z.object({ role: z.enum(MEMBER_ROLES) }).strict();
 
+/**
+ * Deletion payload.
+ *
+ * The organization identifier must be echoed back. Requiring the caller to
+ * retype it makes an accidental or misdirected delete far harder than a bare
+ * confirmation dialog would.
+ */
+const deleteOrganizationSchema = z
+  .object({
+    confirm_user_id: z
+      .string()
+      .trim()
+      .min(1, 'Type the organization id to confirm.')
+      .max(32),
+  })
+  .strict();
+
 module.exports = {
   createOrganizationSchema,
   updateOrganizationSchema,
+  deleteOrganizationSchema,
   addMemberSchema,
   updateMemberSchema,
 };

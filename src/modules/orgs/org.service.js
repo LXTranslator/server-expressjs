@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 const config = require('../../config');
 const logger = require('../../core/logger');
-const { Account, OrgMember } = require('../../infrastructure/database/models');
+const { Account, OrgMember, Project } = require('../../infrastructure/database/models');
 const { assertRole } = require('../namespaces/namespace.service');
 const {
   BadRequestError,
@@ -264,9 +264,60 @@ async function removeMember({ namespace, role, account, memberId }) {
   logger.info('Organization member removed.', { organizationId: namespace.id, memberId });
 }
 
+/**
+ * Permanently deletes an organization namespace.
+ *
+ * This is the most destructive operation in the application: the cascade takes
+ * the organization's projects, their files, every translation key and every
+ * translation with it. Three guards apply.
+ *
+ *   1. Only an OWNER may do it. ADMIN is deliberately not enough.
+ *   2. The caller must echo the organization's own `user_id`, so a misdirected
+ *      request cannot delete the wrong namespace.
+ *   3. Personal namespaces are refused outright. Deleting one would mean
+ *      deleting the account itself, which is a different flow with different
+ *      consequences.
+ *
+ * @param {object} params Deletion parameters.
+ * @param {object} params.namespace Organization account.
+ * @param {string} params.role Caller's role.
+ * @param {{confirm_user_id: string}} params.input Validated payload.
+ * @returns {Promise<void>}
+ * @throws {BadRequestError} When the namespace is personal or the name does not match.
+ * @throws {ForbiddenError} When the caller is not an owner.
+ */
+async function deleteOrganization({ namespace, role, input }) {
+  if (namespace.type !== 'ORG') {
+    throw new BadRequestError(
+      'Only organization namespaces can be deleted here. A personal namespace is tied to your account.',
+    );
+  }
+
+  assertRole(role, 'OWNER');
+
+  if (input.confirm_user_id !== namespace.userId) {
+    throw new BadRequestError(
+      'The confirmation does not match this organization identifier.',
+    );
+  }
+
+  const projectCount = await Project.count({ where: { namespaceAccountId: namespace.id } });
+
+  logger.warn('Organization deleted.', {
+    organizationId: namespace.id,
+    userId: namespace.userId,
+    projectCount,
+  });
+
+  // The cascade defined on the associations removes members, projects, files,
+  // translation keys and translations.
+  await namespace.destroy();
+}
+
 module.exports = {
   createOrganization,
   updateOrganization,
+  deleteOrganization,
   listMembers,
   addMember,
   updateMemberRole,

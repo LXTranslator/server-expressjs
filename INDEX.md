@@ -160,6 +160,7 @@ Off thread execution of the translation pipeline.
 | [`tests/auth.test.js`](tests/auth.test.js) | Registration, login, lockout and password reset tests. |
 | [`tests/pipeline.test.js`](tests/pipeline.test.js) | Upload, translation, export and staleness tests. |
 | [`tests/access.test.js`](tests/access.test.js) | Object level authorization and role tests. |
+| [`tests/organization.test.js`](tests/organization.test.js) | Organization creation, availability and deletion tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
 
 ## Agent Configuration
