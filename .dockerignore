@@ -1,0 +1,34 @@
+# Keep the build context small and free of anything sensitive.
+node_modules/
+npm-debug.log*
+
+# Secrets must never enter an image layer.
+.env
+.env.*
+*.pem
+*.key
+
+# Local state.
+data/
+storage/
+tmp/
+*.sqlite
+*.sqlite3
+*.db
+
+# Development only material.
+tests/
+coverage/
+jest.config.js
+.git/
+.gitignore
+.gitattributes
+.github/
+.agents/
+wiki/
+INDEX.md
+README.md
+*.md
+.vscode/
+.idea/
+.DS_Store
