@@ -1,0 +1,103 @@
+'use strict';
+
+const { z } = require('zod');
+
+/**
+ * Request schemas for the authentication module.
+ *
+ * These mirror the client side rules exactly. The client validates for a fast,
+ * helpful form experience; the server validates because client checks are only
+ * a convenience and can be bypassed entirely.
+ *
+ * `.strict()` on every object is what blocks mass assignment: a payload
+ * carrying an undeclared field such as `type` or `role` is rejected outright
+ * rather than quietly ignored.
+ */
+
+/** Routing identifier: lowercase letters, digits and underscores. */
+const userIdSchema = z
+  .string()
+  .trim()
+  .min(3, 'The user id must be at least 3 characters.')
+  .max(32, 'The user id must be 32 characters or fewer.')
+  .regex(
+    /^[a-z0-9_]+$/,
+    'The user id may contain only lowercase letters, digits and underscores.',
+  );
+
+const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(254, 'The email address is too long.')
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/, 'Enter a valid email address.');
+
+/**
+ * Password policy.
+ *
+ * Length carries most of the strength, so the floor is deliberately higher than
+ * the usual eight characters, with a light character mix requirement on top.
+ */
+const passwordSchema = z
+  .string()
+  .min(10, 'The password must be at least 10 characters.')
+  .max(200, 'The password must be 200 characters or fewer.')
+  .regex(/[a-z]/, 'The password must contain a lowercase letter.')
+  .regex(/[A-Z]/, 'The password must contain an uppercase letter.')
+  .regex(/[0-9]/, 'The password must contain a digit.');
+
+const registerSchema = z
+  .object({
+    user_id: userIdSchema,
+    email: emailSchema,
+    password: passwordSchema,
+    confirm_password: z.string(),
+  })
+  .strict()
+  .refine((data) => data.password === data.confirm_password, {
+    message: 'The passwords do not match.',
+    path: ['confirm_password'],
+  });
+
+const loginSchema = z
+  .object({
+    // Accepts either form, because the login page offers a single field.
+    identifier: z.string().trim().min(1, 'Enter your user id or email address.').max(254),
+    password: z.string().min(1, 'Enter your password.').max(200),
+  })
+  .strict();
+
+const forgotPasswordSchema = z.object({ email: emailSchema }).strict();
+
+const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, 'The reset token is missing.').max(4096),
+    password: passwordSchema,
+    confirm_password: z.string(),
+  })
+  .strict()
+  .refine((data) => data.password === data.confirm_password, {
+    message: 'The passwords do not match.',
+    path: ['confirm_password'],
+  });
+
+const availabilitySchema = z
+  .object({
+    user_id: userIdSchema.optional(),
+    email: emailSchema.optional(),
+  })
+  .strict()
+  .refine((data) => data.user_id !== undefined || data.email !== undefined, {
+    message: 'Provide a user id or an email address to check.',
+  });
+
+module.exports = {
+  userIdSchema,
+  emailSchema,
+  passwordSchema,
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  availabilitySchema,
+};
