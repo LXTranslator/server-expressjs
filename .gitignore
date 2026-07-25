@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.test.public
+*.pem
+*.key
+
+# Local database files
+*.sqlite
+*.sqlite3
+*.db
+data/
+
+# Runtime storage
+storage/
+uploads/
+tmp/
+
+# Build and coverage output
+coverage/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
