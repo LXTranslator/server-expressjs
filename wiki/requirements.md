@@ -46,7 +46,7 @@ consumer.
 |---|---|---|
 | FR-20 | Projects belong to a namespace and are unique by name within it. | Done |
 | FR-21 | A project selects an AI provider and model. | Done |
-| FR-22 | A project may hold several API keys with an explicit priority order. | Done |
+| FR-22 | An account may hold several API keys, across several platforms, with an explicit priority order. A project holds none and borrows from the account that owns it. | Done |
 | FR-23 | Keys are encrypted before storage and never returned to a client. | Done |
 | FR-24 | Keys can be added, edited, deactivated, reordered and removed. | Done |
 | FR-25 | When a key fails, the next by priority is tried automatically. | Done |
@@ -127,7 +127,8 @@ consumer.
 
 * The client is a browser application holding its token in memory or session
   storage. No cookie is issued, so no CSRF token is required.
-* Provider credentials belong to the customer and are entered per project rather
-  than configured globally.
+* Provider credentials belong to the customer and are entered per account rather
+  than configured globally. They sit on the account because a credential is a
+  billing relationship; a project names only a platform and a model.
 * One PostgreSQL instance is sufficient at the intended scale; the application
   is stateless and scales horizontally.

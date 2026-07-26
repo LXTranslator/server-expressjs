@@ -77,7 +77,6 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/account.js`](src/infrastructure/database/models/account.js) | Namespace accounts for people and organizations. |
 | [`src/infrastructure/database/models/orgMember.js`](src/infrastructure/database/models/orgMember.js) | Organization membership and roles. |
 | [`src/infrastructure/database/models/project.js`](src/infrastructure/database/models/project.js) | Projects owned by a namespace. |
-| [`src/infrastructure/database/models/projectApiKey.js`](src/infrastructure/database/models/projectApiKey.js) | Encrypted provider credentials with priority order. |
 | [`src/infrastructure/database/models/file.js`](src/infrastructure/database/models/file.js) | Uploaded translation files and processing status. |
 | [`src/infrastructure/database/models/translationKey.js`](src/infrastructure/database/models/translationKey.js) | Master strings and their fingerprints. |
 | [`src/infrastructure/database/models/translation.js`](src/infrastructure/database/models/translation.js) | Per language translated strings. |
@@ -137,8 +136,8 @@ One directory per business capability.
 | [`src/modules/chat/chat.schemas.js`](src/modules/chat/chat.schemas.js) | Assistant request schemas. |
 | [`src/modules/chat/chatLog.service.js`](src/modules/chat/chatLog.service.js) | Asynchronous chat logging with an in memory retry buffer. |
 | [`src/modules/chat/embedding.service.js`](src/modules/chat/embedding.service.js) | Conversation embeddings, search and backfill. |
-| [`src/modules/projects/project.routes.js`](src/modules/projects/project.routes.js) | Project, credential and upload routes. |
-| [`src/modules/projects/project.service.js`](src/modules/projects/project.service.js) | Project settings and credential management. |
+| [`src/modules/projects/project.routes.js`](src/modules/projects/project.routes.js) | Project settings, description and upload routes. |
+| [`src/modules/projects/project.service.js`](src/modules/projects/project.service.js) | Project settings. A project names a platform and a model and holds no credentials. |
 | [`src/modules/projects/project.schemas.js`](src/modules/projects/project.schemas.js) | Project request schemas. |
 | [`src/modules/files/file.routes.js`](src/modules/files/file.routes.js) | File status, editor and download routes. |
 | [`src/modules/files/file.service.js`](src/modules/files/file.service.js) | Upload verification, storage and pipeline orchestration. |
@@ -147,7 +146,7 @@ One directory per business capability.
 | [`src/modules/translations/translationExport.js`](src/modules/translations/translationExport.js) | Value and hash export format builder. |
 | [`src/modules/translations/translationConsistency.js`](src/modules/translations/translationConsistency.js) | On demand master to translation consistency report. |
 | [`src/modules/translations/translation.schemas.js`](src/modules/translations/translation.schemas.js) | Translation edit request schemas. |
-| [`src/modules/accountKeys/accountKey.service.js`](src/modules/accountKeys/accountKey.service.js) | Namespace AI credentials and the organization to personal fallback chain. |
+| [`src/modules/accountKeys/accountKey.service.js`](src/modules/accountKeys/accountKey.service.js) | The only decrypt site for provider credentials, and the organization to personal fallback chain. |
 | [`src/modules/accountKeys/accountKey.schemas.js`](src/modules/accountKeys/accountKey.schemas.js) | Namespace AI credential request schemas. |
 | [`src/modules/exportFormats/exportFormat.definitions.js`](src/modules/exportFormats/exportFormat.definitions.js) | Built in format descriptors and field name rules. |
 | [`src/modules/exportFormats/exportFormat.service.js`](src/modules/exportFormats/exportFormat.service.js) | Namespace owned export format management. |

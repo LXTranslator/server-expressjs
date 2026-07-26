@@ -1,7 +1,13 @@
 'use strict';
 
 const request = require('supertest');
-const { setupTestApp, teardownTestApp, registerAccount } = require('./helpers/testApp');
+const {
+  setupTestApp,
+  teardownTestApp,
+  registerAccount,
+  createProject,
+  waitForFile,
+} = require('./helpers/testApp');
 const {
   Account,
   AccountApiKey,
@@ -418,6 +424,110 @@ describe('account AI configuration', () => {
       expect(empty).toHaveLength(1);
       expect(empty[0].origin).toBe('BUILT_IN');
       expect(empty[0].provider).toBe('mock');
+    });
+  });
+
+  describe('the platform a project asked for', () => {
+    /*
+     * A project names a platform and a model and nothing else. The credential
+     * comes from the account chain, narrowed to that platform, because an
+     * OpenAI key cannot pay for an Anthropic call however high it sits in the
+     * order.
+     */
+    let platformAccount;
+    let platformToken;
+
+    beforeAll(async () => {
+      const registered = await registerAccount(app, {
+        user_id: 'platform_user',
+        email: 'platform@example.test',
+      });
+      platformToken = registered.token;
+      platformAccount = registered.account;
+
+      for (const [provider, apiKey] of [
+        ['openai', 'openai_account_key_1111'],
+        ['mock', 'mock_account_key_2222'],
+      ]) {
+        await request(app)
+          .post(`/api/v1/namespaces/${platformAccount.user_id}/settings/ai_keys`)
+          .set('Authorization', `Bearer ${platformToken}`)
+          .send({ provider, api_key: apiKey })
+          .expect(201);
+      }
+    });
+
+    /**
+     * Loads the chain for the platform account, optionally narrowed.
+     *
+     * @param {string} [provider] Platform to narrow to.
+     * @returns {Promise<Array<object>>} Decrypted chain.
+     */
+    async function chainFor(provider) {
+      const account = await Account.findByPk(platformAccount.id);
+      return accountKeyService.loadDecryptedKeys({
+        namespace: account,
+        actor: account,
+        provider,
+      });
+    }
+
+    it('returns the whole chain when no platform is named', async () => {
+      const chain = await chainFor();
+      expect(chain.map((key) => key.provider)).toEqual(['openai', 'mock']);
+    });
+
+    it('returns only the credentials for the platform that was named', async () => {
+      const chain = await chainFor('mock');
+      expect(chain.map((key) => key.lastFour)).toEqual(['2222']);
+    });
+
+    it('falls back to the built in credential when the platform has none', async () => {
+      // Narrowing to a platform the account never configured is the same
+      // situation as an account with no credentials at all.
+      const chain = await chainFor('anthropic');
+      expect(chain).toHaveLength(1);
+      expect(chain[0].origin).toBe('BUILT_IN');
+      expect(chain[0].provider).toBe('anthropic');
+    });
+
+    it('translates a project on the account credential, with none of its own', async () => {
+      const project = await createProject(
+        app,
+        platformToken,
+        platformAccount.user_id,
+        { name: 'platform_project', ai_provider: 'mock' },
+      );
+
+      const uploaded = await request(app)
+        .post(`/api/v1/projects/${project.id}/files`)
+        .set('Authorization', `Bearer ${platformToken}`)
+        .field('target_langs', 'th_th')
+        .attach('file', Buffer.from(JSON.stringify({ a: 'A' })), 'en_us.json')
+        .expect(202);
+
+      const file = await waitForFile(app, platformToken, uploaded.body.data.file.id);
+      expect(file.status).toBe('READY');
+    });
+
+    it('has no credential endpoints of its own', async () => {
+      const project = await createProject(
+        app,
+        platformToken,
+        platformAccount.user_id,
+        { name: 'no_keys_project' },
+      );
+
+      await request(app)
+        .get(`/api/v1/projects/${project.id}/keys`)
+        .set('Authorization', `Bearer ${platformToken}`)
+        .expect(404);
+
+      await request(app)
+        .post(`/api/v1/projects/${project.id}/keys`)
+        .set('Authorization', `Bearer ${platformToken}`)
+        .send({ api_key: 'anything_at_all_0000' })
+        .expect(404);
     });
   });
 

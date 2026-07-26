@@ -13,7 +13,7 @@ const {
 const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 const { resolveWithinDirectory } = require('../../core/filename');
 const { translationPool } = require('../../workers/pool');
-const projectService = require('../projects/project.service');
+const accountKeyService = require('../accountKeys/accountKey.service');
 const { BadRequestError, ConflictError, NotFoundError } = require('../../core/errors');
 
 /**
@@ -238,9 +238,17 @@ async function persistPipelineResult(file, result) {
  * Never rejects: the file's status is the channel through which failure is
  * reported, because the caller has usually already responded by this point.
  *
+ * The credentials come from the namespace that owns the project and from the
+ * person who asked, narrowed to the platform the project selected. A project
+ * holds no keys of its own, so `actor` is not optional in spirit: without it
+ * the chain has no personal tail to fall back to when the organization's keys
+ * are spent.
+ *
  * @param {object} params Processing parameters.
  * @param {object} params.file File model instance.
  * @param {object} params.project Owning project.
+ * @param {object} params.namespace Namespace account owning the project.
+ * @param {object} params.actor Account that asked for this work.
  * @param {string} params.content Verified file content.
  * @param {string} [params.sourceLang] Locale of `content`, when it is not the
  *   file's original upload language. A run rebuilt from stored master text is
@@ -251,11 +259,24 @@ async function persistPipelineResult(file, result) {
  * @param {string[]} [params.skipKeyNames] Keys already held, left untouched.
  * @returns {Promise<void>}
  */
-async function processFile({ file, project, content, sourceLang, targetLangs, skipKeyNames }) {
+async function processFile({
+  file,
+  project,
+  namespace,
+  actor,
+  content,
+  sourceLang,
+  targetLangs,
+  skipKeyNames,
+}) {
   try {
     await file.update({ status: 'PROCESSING', errorMessage: null });
 
-    const keys = await projectService.loadDecryptedKeys(project);
+    const keys = await accountKeyService.loadDecryptedKeys({
+      namespace,
+      actor,
+      provider: project.aiProvider,
+    });
 
     const { result, attempts } = await translationPool.run({
       content,
@@ -268,7 +289,7 @@ async function processFile({ file, project, content, sourceLang, targetLangs, sk
     });
 
     await persistPipelineResult(file, result);
-    await projectService.recordKeyAttempts(attempts);
+    await accountKeyService.recordKeyAttempts(attempts);
 
     logger.info('File processed.', {
       fileId: file.id,
@@ -282,7 +303,7 @@ async function processFile({ file, project, content, sourceLang, targetLangs, sk
       kind: error.kind ?? null,
     });
 
-    await projectService.recordKeyAttempts(error.attempts ?? []);
+    await accountKeyService.recordKeyAttempts(error.attempts ?? []);
 
     // The stored message is already client safe: it originates either from the
     // application's own error taxonomy or from the provider error categories.
@@ -303,7 +324,7 @@ async function processFile({ file, project, content, sourceLang, targetLangs, sk
  * @returns {Promise<{file: object, processing: Promise<void>}>}
  * @throws {ConflictError} When the project already has a file with that name.
  */
-async function createUpload({ project, file, sourceLang, targetLangs }) {
+async function createUpload({ project, namespace, actor, file, sourceLang, targetLangs }) {
   const content = assertJsonObject(file.buffer);
 
   const normalizedSource = assertLangCode(sourceLang ?? MASTER_LANG_CODE);
@@ -340,7 +361,7 @@ async function createUpload({ project, file, sourceLang, targetLangs }) {
 
   // Started but not awaited: the response returns immediately and the client
   // polls the file's status.
-  const processing = processFile({ file: record, project, content });
+  const processing = processFile({ file: record, project, namespace, actor, content });
 
   return { file: record, processing };
 }
@@ -383,7 +404,7 @@ async function buildMasterDocument(fileId) {
  * @returns {Promise<{file: object, added: string[], processing: Promise<void>}>}
  * @throws {BadRequestError} When no locale would be added or the file is empty.
  */
-async function addTargetLanguages({ file, project, targetLangs }) {
+async function addTargetLanguages({ file, project, namespace, actor, targetLangs }) {
   const normalized = [...new Set(targetLangs.map(assertLangCode))];
   const existing = new Set([...file.targetLangCodes, file.sourceLangCode, MASTER_LANG_CODE]);
   const added = normalized.filter((code) => !existing.has(code));
@@ -406,6 +427,8 @@ async function addTargetLanguages({ file, project, targetLangs }) {
   const processing = processFile({
     file,
     project,
+    namespace,
+    actor,
     content,
     sourceLang: MASTER_LANG_CODE,
     targetLangs: added,
@@ -436,7 +459,7 @@ async function addTargetLanguages({ file, project, targetLangs }) {
  * @throws {NotFoundError} When an identifier does not belong to this file.
  * @throws {BadRequestError} When no locale would be produced.
  */
-async function retranslateKeys({ file, project, keyIds, targetLangs }) {
+async function retranslateKeys({ file, project, namespace, actor, keyIds, targetLangs }) {
   const wanted = [...new Set(keyIds)];
 
   // The file predicate is what stops a caller from refreshing, and so
@@ -480,6 +503,8 @@ async function retranslateKeys({ file, project, keyIds, targetLangs }) {
   const processing = processFile({
     file,
     project,
+    namespace,
+    actor,
     content,
     sourceLang: MASTER_LANG_CODE,
     targetLangs: requested,
@@ -507,7 +532,7 @@ async function retranslateKeys({ file, project, keyIds, targetLangs }) {
  * @returns {Promise<{file: object, existingKeyCount: number, processing: Promise<void>}>}
  * @throws {BadRequestError} When the document is not a JSON object.
  */
-async function mergeKeys({ file, project, upload }) {
+async function mergeKeys({ file, project, namespace, actor, upload }) {
   const content = assertJsonObject(upload.buffer);
   const { keyNames } = await buildMasterDocument(file.id);
 
@@ -526,6 +551,8 @@ async function mergeKeys({ file, project, upload }) {
   const processing = processFile({
     file,
     project,
+    namespace,
+    actor,
     content,
     skipKeyNames: keyNames,
   });

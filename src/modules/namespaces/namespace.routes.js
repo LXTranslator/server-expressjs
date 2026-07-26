@@ -331,7 +331,8 @@ router.post(
     }
 
     const result = await projectService.addLanguagesAcrossProjects({
-      namespaceAccountId: req.namespace.id,
+      namespace: req.namespace,
+      actor: req.account,
       projectIds: req.body.project_ids,
       allProjects: req.body.all_projects === true,
       targetLangs: req.body.target_langs,

@@ -32,28 +32,6 @@ const updateProjectSchema = z
   })
   .strict();
 
-const addApiKeySchema = z
-  .object({
-    api_key: z
-      .string()
-      .trim()
-      .min(8, 'That does not look like a valid API key.')
-      .max(500, 'The API key is too long.'),
-    label: z.string().trim().max(80).optional(),
-    priority_order: z.number().int().min(1).max(1000).optional(),
-    is_active: z.boolean().optional(),
-  })
-  .strict();
-
-const updateApiKeySchema = z
-  .object({
-    api_key: z.string().trim().min(8).max(500).optional(),
-    label: z.string().trim().max(80).optional(),
-    priority_order: z.number().int().min(1).max(1000).optional(),
-    is_active: z.boolean().optional(),
-  })
-  .strict();
-
 /** A description on its own, for the endpoint that changes nothing else. */
 const updateProjectDescriptionSchema = z
   .object({ description: z.string().trim().max(500) })
@@ -81,16 +59,9 @@ const addNamespaceLanguagesSchema = z
     path: ['project_ids'],
   });
 
-const reorderApiKeysSchema = z
-  .object({ ordered_key_ids: z.array(z.string().uuid()).min(1).max(50) })
-  .strict();
-
 module.exports = {
   createProjectSchema,
   updateProjectSchema,
   updateProjectDescriptionSchema,
   addNamespaceLanguagesSchema,
-  addApiKeySchema,
-  updateApiKeySchema,
-  reorderApiKeysSchema,
 };

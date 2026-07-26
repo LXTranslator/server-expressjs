@@ -20,13 +20,14 @@ description: Prevent API keys, passwords and tokens from being written into sour
    add a default that lacks the marker.
 4. **Provider API keys are user data, not configuration.** They arrive through
    the API, are encrypted with `encryptSecret` before they touch the database,
-   and are decrypted in exactly one function per table: `loadDecryptedKeys` in
-   `project.service.js` for project credentials, and the one of the same name in
-   `accountKeys/accountKey.service.js` for namespace credentials.
-5. **No endpoint returns a key.** The `project_api_keys` and `account_api_keys`
-   models exclude the secret from every default query through their
-   `defaultScope`. Reading it requires the explicit `withSecret` scope. Client
-   responses carry only a label and the last four characters.
+   and are decrypted in exactly one function anywhere in the application:
+   `loadDecryptedKeys` in `accountKeys/accountKey.service.js`. Translation and
+   the assistant both go through it. A project holds no credentials, so nothing
+   below the account layer ever needs to decrypt anything.
+5. **No endpoint returns a key.** The `account_api_keys` model excludes the
+   secret from every default query through its `defaultScope`. Reading it
+   requires the explicit `withSecret` scope. Client responses carry only a label
+   and the last four characters.
 
    The scope must name the **attribute** (`apiKey`), not the column (`api_key`).
    Sequelize matches `attributes.exclude` against attribute names, so a scope

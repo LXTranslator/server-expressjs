@@ -32,11 +32,11 @@ case rather than the dangerous one.
    ```
 
 2. **Scope nested writes by their parent.** Updating a credential filters on
-   both the key id and the project id, so an identifier from another project
+   both the key id and the account id, so an identifier from another namespace
    matches nothing:
 
    ```js
-   ProjectApiKey.findOne({ where: { id: keyId, projectId } })
+   AccountApiKey.findOne({ where: { id: keyId, accountId } })
    ```
 
    The same pattern applies to translations, which are scoped by their file, and

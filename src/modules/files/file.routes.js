@@ -114,6 +114,8 @@ router.post(
     const { file, keys, targetLangs } = await fileService.retranslateKeys({
       file: req.file,
       project: req.project,
+      namespace: req.namespace,
+      actor: req.account,
       keyIds: req.body.key_ids,
       targetLangs: req.body.target_langs,
     });
@@ -230,6 +232,8 @@ router.post(
     const { file, added } = await fileService.addTargetLanguages({
       file: req.file,
       project: req.project,
+      namespace: req.namespace,
+      actor: req.account,
       targetLangs: req.body.target_langs,
     });
 
@@ -268,6 +272,8 @@ router.post(
     const { file, existingKeyCount } = await fileService.mergeKeys({
       file: req.fileRecord,
       project: req.project,
+      namespace: req.namespace,
+      actor: req.account,
       upload: req.file,
     });
 
@@ -295,6 +301,8 @@ router.post(
     fileService.processFile({
       file: req.file,
       project: req.project,
+      namespace: req.namespace,
+      actor: req.account,
       content,
       sourceLang: MASTER_LANG_CODE,
     });

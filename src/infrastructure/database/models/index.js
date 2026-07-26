@@ -5,7 +5,6 @@ const { sequelize } = require('../sequelize');
 const defineAccount = require('./account');
 const defineOrgMember = require('./orgMember');
 const defineProject = require('./project');
-const defineProjectApiKey = require('./projectApiKey');
 const defineFile = require('./file');
 const defineTranslationKey = require('./translationKey');
 const defineTranslation = require('./translation');
@@ -17,7 +16,6 @@ const defineAiChatLog = require('./aiChatLog');
 const Account = defineAccount(sequelize);
 const OrgMember = defineOrgMember(sequelize);
 const Project = defineProject(sequelize);
-const ProjectApiKey = defineProjectApiKey(sequelize);
 const File = defineFile(sequelize);
 const TranslationKey = defineTranslationKey(sequelize);
 const Translation = defineTranslation(sequelize);
@@ -67,16 +65,9 @@ Project.belongsTo(Account, {
   foreignKey: { name: 'namespaceAccountId', field: 'namespace_account_id' },
 });
 
-// Project to API keys.
-Project.hasMany(ProjectApiKey, {
-  as: 'apiKeys',
-  foreignKey: { name: 'projectId', field: 'project_id' },
-  onDelete: 'CASCADE',
-});
-ProjectApiKey.belongsTo(Project, {
-  as: 'project',
-  foreignKey: { name: 'projectId', field: 'project_id' },
-});
+// A project has no credentials of its own. It names a platform and a model, and
+// the key that pays for them is resolved from the owning namespace and then the
+// acting person, both of which hang off `AccountApiKey` below.
 
 // Project to files.
 Project.hasMany(File, {
@@ -176,7 +167,6 @@ module.exports = {
   Account,
   OrgMember,
   Project,
-  ProjectApiKey,
   File,
   TranslationKey,
   Translation,
