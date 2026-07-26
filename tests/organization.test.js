@@ -85,6 +85,78 @@ describe('organization lifecycle', () => {
     });
   });
 
+  describe('organization contact email', () => {
+    it('stores an address separate from every member personal address', async () => {
+      await createOrganization('billing_org');
+
+      const response = await request(app)
+        .get('/api/v1/namespaces/billing_org')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .expect(200);
+
+      // The organization carries its own address, not the creator's.
+      expect(response.body.data.namespace.email).toBe('billing_org@example.test');
+      expect(response.body.data.namespace.email).not.toBe(owner.account.email);
+    });
+
+    it('lets an admin change the contact address', async () => {
+      await createOrganization('contact_org');
+
+      const response = await request(app)
+        .patch('/api/v1/namespaces/contact_org/settings')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .send({ email: 'accounts@contact.example' })
+        .expect(200);
+
+      expect(response.body.data.namespace.email).toBe('accounts@contact.example');
+    });
+
+    it('refuses an address already registered to another account', async () => {
+      await createOrganization('clash_org');
+
+      const response = await request(app)
+        .patch('/api/v1/namespaces/clash_org/settings')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .send({ email: member.account.email })
+        .expect(409);
+
+      expect(response.body.error.code).toBe('CONFLICT');
+    });
+
+    it('rejects a malformed address', async () => {
+      await createOrganization('malformed_org');
+
+      await request(app)
+        .patch('/api/v1/namespaces/malformed_org/settings')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .send({ email: 'not-an-address' })
+        .expect(422);
+    });
+
+    it('stops a plain member from changing the contact address', async () => {
+      await createOrganization('guarded_contact_org');
+
+      await request(app)
+        .patch('/api/v1/namespaces/guarded_contact_org/settings')
+        .set('Authorization', `Bearer ${member.token}`)
+        .send({ email: 'hijack@example.test' })
+        .expect(403);
+    });
+
+    it('leaves the address untouched when other fields are updated', async () => {
+      await createOrganization('stable_org');
+
+      const response = await request(app)
+        .patch('/api/v1/namespaces/stable_org/settings')
+        .set('Authorization', `Bearer ${owner.token}`)
+        .send({ display_name: 'Renamed Org' })
+        .expect(200);
+
+      expect(response.body.data.namespace.display_name).toBe('Renamed Org');
+      expect(response.body.data.namespace.email).toBe('stable_org@example.test');
+    });
+  });
+
   describe('deletion', () => {
     it('refuses deletion by a plain member', async () => {
       await createOrganization('member_guard_org');

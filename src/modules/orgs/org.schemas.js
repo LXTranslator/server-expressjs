@@ -18,6 +18,14 @@ const updateOrganizationSchema = z
     display_name: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(500).optional(),
     website_url: z.string().trim().url('Enter a valid URL.').max(255).optional(),
+    /**
+     * The organization's own contact address.
+     *
+     * Held separately from every member's personal address so billing and
+     * account notices reach the organization rather than whichever person
+     * happened to create it. That person may later leave.
+     */
+    email: emailSchema.optional(),
   })
   .strict();
 

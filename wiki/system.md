@@ -59,7 +59,7 @@ left behind.
 
 | Table | Notes |
 |---|---|
-| `accounts` | `user_id` is the routing handle. The schema calls the credential column `password (Hash)`; it is named `password_hash` here so no reader can mistake it for plaintext. Also carries lockout state. |
+| `accounts` | Each row is a namespace. An ORG row carries the organization's own `email`, used for billing and account notices, so those never depend on the personal address of whoever created it. `user_id` is the routing handle. The schema calls the credential column `password (Hash)`; it is named `password_hash` here so no reader can mistake it for plaintext. Also carries lockout state. |
 | `org_members` | Unique on `(org_account_id, user_account_id)`. Roles are `OWNER`, `ADMIN`, `MEMBER`. |
 | `projects` | Unique on `(namespace_account_id, name)`, so names are unique per namespace rather than globally. |
 | `project_api_keys` | `api_key` holds an AES 256 GCM envelope. Excluded from every default query by a Sequelize scope, so reading it requires asking for it by name. |

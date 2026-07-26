@@ -86,13 +86,30 @@ async function updateOrganization({ namespace, role, input }) {
   }
   assertRole(role, 'ADMIN');
 
+  // Changing the contact address is the one field here that can collide with
+  // another account, so it is checked before the write rather than left to a
+  // database constraint error.
+  if (input.email !== undefined && input.email !== namespace.email) {
+    const existing = await Account.findOne({
+      where: { email: input.email, id: { [Op.ne]: namespace.id } },
+      attributes: ['id'],
+    });
+    if (existing !== null) {
+      throw new ConflictError('That email address is already registered.');
+    }
+  }
+
   await namespace.update({
     ...(input.display_name === undefined ? {} : { displayName: input.display_name }),
     ...(input.description === undefined ? {} : { description: input.description }),
     ...(input.website_url === undefined ? {} : { websiteUrl: input.website_url }),
+    ...(input.email === undefined ? {} : { email: input.email }),
   });
 
-  logger.info('Organization profile updated.', { organizationId: namespace.id });
+  logger.info('Organization profile updated.', {
+    organizationId: namespace.id,
+    emailChanged: input.email !== undefined,
+  });
   return namespace.toPublicJson();
 }
 

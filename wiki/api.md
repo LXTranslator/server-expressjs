@@ -259,8 +259,21 @@ Organization profile. Requires `ADMIN` or above. **400** on a personal
 namespace.
 
 ```json
-{ "display_name": "Acme Corporation", "description": "...", "website_url": "https://acme.com" }
+{
+  "display_name": "Acme Corporation",
+  "description": "Localization team",
+  "website_url": "https://acme.com",
+  "email": "accounts@acme.com"
+}
 ```
+
+Every field is optional; omitted fields are left unchanged.
+
+`email` is the **organization's own contact address**, held separately from
+every member's personal address. Billing and account notices are addressed to
+the organization rather than to whichever person happened to create it, since
+that person may later leave. Changing it to an address already registered to
+another account returns **409**.
 
 ### `DELETE /namespaces/:namespace`
 

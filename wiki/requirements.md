@@ -37,6 +37,8 @@ consumer.
 | FR-17 | Nobody may grant a role above their own. | Done |
 | FR-18 | An organization always keeps at least one owner. | Done |
 | FR-19 | Organization profile details are editable by `ADMIN` and above. | Done |
+| FR-19a | An organization holds its own contact email, separate from any member personal address, for billing and account notices. | Done |
+| FR-19b | An organization can be permanently deleted by an owner, confirming by retyping its identifier. | Done |
 
 ### Projects and credentials
 
