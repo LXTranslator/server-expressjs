@@ -40,6 +40,24 @@ const chatSearchQuerySchema = z
 
 const chatHistoryQuerySchema = z.object({ limit: limitSchema.optional() }).strict();
 
+/**
+ * Renaming a conversation.
+ *
+ * An empty string is accepted deliberately: it clears the name and puts the
+ * conversation back to being listed by its opening question, which is a thing a
+ * person may want and would otherwise have no way to ask for.
+ */
+const renameSessionSchema = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .max(120, 'A conversation name must be 120 characters or fewer.'),
+  })
+  .strict();
+
+const listSessionsQuerySchema = z.object({ limit: limitSchema.optional() }).strict();
+
 const backfillEmbeddingsSchema = z
   .object({
     limit: z.number().int().min(1).max(config.chat.embeddingBackfillLimit).optional(),
@@ -51,4 +69,6 @@ module.exports = {
   chatSearchQuerySchema,
   chatHistoryQuerySchema,
   backfillEmbeddingsSchema,
+  renameSessionSchema,
+  listSessionsQuerySchema,
 };

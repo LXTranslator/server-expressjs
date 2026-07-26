@@ -83,6 +83,7 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/authToken.js`](src/infrastructure/database/models/authToken.js) | Single use short lived token ledger. |
 | [`src/infrastructure/database/models/exportFormat.js`](src/infrastructure/database/models/exportFormat.js) | Download shapes owned by a namespace. |
 | [`src/infrastructure/database/models/accountApiKey.js`](src/infrastructure/database/models/accountApiKey.js) | Encrypted namespace level AI credentials with platform, model and priority order. |
+| [`src/infrastructure/database/models/aiChatSession.js`](src/infrastructure/database/models/aiChatSession.js) | A named conversation, owned by a namespace and a person. |
 | [`src/infrastructure/database/models/aiChatLog.js`](src/infrastructure/database/models/aiChatLog.js) | Assistant conversation history, token usage and embeddings. |
 | [`src/infrastructure/crypto/secretBox.js`](src/infrastructure/crypto/secretBox.js) | AES 256 GCM encryption for stored credentials. |
 | [`src/infrastructure/email/mailer.js`](src/infrastructure/email/mailer.js) | Console and SMTP mail transports. |
@@ -134,6 +135,7 @@ One directory per business capability.
 | [`src/modules/chat/chat.service.js`](src/modules/chat/chat.service.js) | The bounded agent loop. |
 | [`src/modules/chat/chat.tools.js`](src/modules/chat/chat.tools.js) | Tool catalogue and dispatch, with authorization in backend code. |
 | [`src/modules/chat/chat.schemas.js`](src/modules/chat/chat.schemas.js) | Assistant request schemas. |
+| [`src/modules/chat/chatSession.service.js`](src/modules/chat/chatSession.service.js) | Naming, listing, resolving and deleting conversations. |
 | [`src/modules/chat/chatLog.service.js`](src/modules/chat/chatLog.service.js) | Asynchronous chat logging with an in memory retry buffer. |
 | [`src/modules/chat/embedding.service.js`](src/modules/chat/embedding.service.js) | Conversation embeddings, search and backfill. |
 | [`src/modules/projects/project.routes.js`](src/modules/projects/project.routes.js) | Project settings, description and upload routes. |

@@ -8,6 +8,7 @@ const { buildChatSystemPrompt, renderToolResult } = require('../../infrastructur
 const { ServiceUnavailableError } = require('../../core/errors');
 const accountKeyService = require('../accountKeys/accountKey.service');
 const chatLogService = require('./chatLog.service');
+const chatSessionService = require('./chatSession.service');
 const embeddingService = require('./embedding.service');
 const { listToolDefinitions, dispatchTool } = require('./chat.tools');
 
@@ -79,14 +80,24 @@ function toHistoryMessages(rows) {
  * @param {string} params.namespaceRole Caller's role in that namespace.
  * @param {string} params.message What the person asked.
  * @param {string} [params.sessionId] Conversation to continue. A new one is
- *   minted when absent.
+ *   started when absent.
  * @param {object|null} [params.attachment] Verified upload, when one was sent.
  * @returns {Promise<object>} The answer and what it took to produce it.
+ * @throws {NotFoundError} When continuing a conversation the caller does not own.
  * @throws {ServiceUnavailableError} When no credential can answer.
  */
 async function converse({ actor, namespace, namespaceRole, message, sessionId, attachment }) {
   const keys = await accountKeyService.loadDecryptedKeys({ namespace, actor });
-  const session = sessionId ?? chatLogService.newSessionId();
+
+  // Opened before anything is spent. Continuing a conversation somebody else
+  // owns fails here rather than after a paid provider call.
+  const sessionRecord = await chatSessionService.openSession({
+    sessionId,
+    accountId: namespace.id,
+    userAccountId: actor.id,
+    message,
+  });
+  const session = sessionRecord.id;
 
   const history = await chatLogService.readSessionWindow({
     sessionId: session,
@@ -233,6 +244,13 @@ async function converse({ actor, namespace, namespaceRole, message, sessionId, a
     totalTokenUsage: runningTotal,
   });
 
+  // After the answer exists, so a counter that fails to update costs a stale
+  // number in a list rather than the reply itself.
+  await chatSessionService.recordTurn({
+    session: sessionRecord,
+    totalTokenUsage: runningTotal,
+  });
+
   // Started, never awaited. The answer does not wait for a vector, and an
   // account with no embedding model configured simply skips this.
   embeddingService
@@ -256,6 +274,7 @@ async function converse({ actor, namespace, namespaceRole, message, sessionId, a
 
   return {
     session_id: session,
+    session: sessionRecord.toPublicJson(),
     answer,
     namespace: context.namespace.userId,
     tool_calls: toolCalls,
@@ -275,8 +294,17 @@ async function converse({ actor, namespace, namespaceRole, message, sessionId, a
  * @param {string} params.sessionId Session identifier.
  * @param {number} [params.limit] Turns to read.
  * @returns {Promise<object>} History payload.
+ * @throws {NotFoundError} When it is not the caller's conversation.
  */
 async function readSession({ actor, namespace, sessionId, limit }) {
+  // Resolved first, so reading a conversation that is not yours is a 404 rather
+  // than an empty history indistinguishable from a new one.
+  const session = await chatSessionService.resolveSession({
+    sessionId,
+    accountId: namespace.id,
+    userAccountId: actor.id,
+  });
+
   const rows = await chatLogService.readSessionWindow({
     sessionId,
     accountId: namespace.id,
@@ -286,6 +314,7 @@ async function readSession({ actor, namespace, sessionId, limit }) {
 
   return {
     session_id: sessionId,
+    session: session.toPublicJson(),
     turn_count: rows.length,
     turns: rows.map((row) => row.toPublicJson()),
   };

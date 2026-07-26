@@ -66,6 +66,7 @@ consumer.
 | FR-34 | Translations can be corrected by hand and are then protected from reruns. | Done |
 | FR-35 | Editing a master string marks its translations stale. | Done |
 | FR-36 | Locale files can be downloaded individually or together. | Done |
+| FR-37 | A conversation with the assistant is a named record that can be listed, renamed and deleted, and belongs to one namespace and one person. | Done |
 
 ## Non functional requirements
 

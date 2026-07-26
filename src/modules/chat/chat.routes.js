@@ -8,6 +8,7 @@ const { optionalTranslationFile } = require('../../middleware/upload');
 const chatService = require('./chat.service');
 const embeddingService = require('./embedding.service');
 const chatLogService = require('./chatLog.service');
+const chatSessionService = require('./chatSession.service');
 const schemas = require('./chat.schemas');
 
 /**
@@ -51,6 +52,27 @@ router.post(
   }),
 );
 
+/**
+ * Lists the caller's conversations in this namespace.
+ *
+ * Their own and nobody else's, including inside an organization: an
+ * administrator manages the credentials that pay for the assistant, which is
+ * not the same as reading what a colleague asked it.
+ */
+router.get(
+  '/sessions',
+  validate(schemas.listSessionsQuerySchema, 'query'),
+  asyncHandler(async (req, res) => {
+    const { limit } = validated(req, 'query');
+    const sessions = await chatSessionService.listSessions({
+      accountId: req.namespace.id,
+      userAccountId: req.account.id,
+      limit,
+    });
+    res.json({ data: { sessions } });
+  }),
+);
+
 /** Reads back one conversation, which is always the caller's own. */
 router.get(
   '/sessions/:sessionId',
@@ -64,6 +86,41 @@ router.get(
       limit,
     });
     res.json({ data: history });
+  }),
+);
+
+/**
+ * Names a conversation.
+ *
+ * A conversation is named from its opening question when it starts, which makes
+ * a list readable without anybody doing anything. This replaces that, and once
+ * replaced nothing rewrites it: a name somebody chose outranks one derived from
+ * a sentence they happened to type first.
+ */
+router.patch(
+  '/sessions/:sessionId',
+  validate(schemas.renameSessionSchema),
+  asyncHandler(async (req, res) => {
+    const session = await chatSessionService.renameSession({
+      sessionId: req.params.sessionId,
+      accountId: req.namespace.id,
+      userAccountId: req.account.id,
+      title: req.body.title,
+    });
+    res.json({ data: { session } });
+  }),
+);
+
+/** Deletes a conversation and every turn in it. */
+router.delete(
+  '/sessions/:sessionId',
+  asyncHandler(async (req, res) => {
+    await chatSessionService.deleteSession({
+      sessionId: req.params.sessionId,
+      accountId: req.namespace.id,
+      userAccountId: req.account.id,
+    });
+    res.status(204).send();
   }),
 );
 

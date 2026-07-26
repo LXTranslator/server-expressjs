@@ -12,6 +12,7 @@ const defineAuthToken = require('./authToken');
 const defineExportFormat = require('./exportFormat');
 const defineAccountApiKey = require('./accountApiKey');
 const defineAiChatLog = require('./aiChatLog');
+const defineAiChatSession = require('./aiChatSession');
 
 const Account = defineAccount(sequelize);
 const OrgMember = defineOrgMember(sequelize);
@@ -23,6 +24,7 @@ const AuthToken = defineAuthToken(sequelize);
 const ExportFormat = defineExportFormat(sequelize);
 const AccountApiKey = defineAccountApiKey(sequelize);
 const AiChatLog = defineAiChatLog(sequelize);
+const AiChatSession = defineAiChatSession(sequelize);
 
 /*
  * Associations.
@@ -151,6 +153,44 @@ AiChatLog.belongsTo(Account, {
   foreignKey: { name: 'userAccountId', field: 'user_id' },
 });
 
+// Conversations hang off the same two accounts, for the same reasons.
+Account.hasMany(AiChatSession, {
+  as: 'chatSessions',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AiChatSession.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
+Account.hasMany(AiChatSession, {
+  as: 'authoredChatSessions',
+  foreignKey: { name: 'userAccountId', field: 'user_id' },
+  onDelete: 'CASCADE',
+});
+AiChatSession.belongsTo(Account, {
+  as: 'author',
+  foreignKey: { name: 'userAccountId', field: 'user_id' },
+});
+
+/*
+ * A session to its turns.
+ *
+ * Deleting a conversation takes its turns with it, which is what makes
+ * "delete this conversation" a single statement rather than a sweep over a log
+ * table by an identifier that used to belong to nothing.
+ */
+AiChatSession.hasMany(AiChatLog, {
+  as: 'turns',
+  foreignKey: { name: 'sessionId', field: 'session_id' },
+  onDelete: 'CASCADE',
+});
+AiChatLog.belongsTo(AiChatSession, {
+  as: 'session',
+  foreignKey: { name: 'sessionId', field: 'session_id' },
+});
+
 // Account to short lived tokens.
 Account.hasMany(AuthToken, {
   as: 'authTokens',
@@ -174,4 +214,5 @@ module.exports = {
   ExportFormat,
   AccountApiKey,
   AiChatLog,
+  AiChatSession,
 };
