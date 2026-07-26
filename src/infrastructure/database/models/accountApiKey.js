@@ -51,6 +51,19 @@ module.exports = (sequelize) => {
         allowNull: false,
         field: 'chat_model',
       },
+      /**
+       * Model used to embed conversations for later search.
+       *
+       * Nullable, and null is the ordinary case rather than an error. An
+       * account that configures no embedding model still chats normally; the
+       * embedding step is skipped and the log's vector column stays empty until
+       * a model is configured and the rows are backfilled.
+       */
+      embeddingModel: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        field: 'embedding_model',
+      },
       /** AES-256-GCM envelope, never a readable credential. */
       apiKey: {
         type: DataTypes.TEXT,
@@ -128,6 +141,7 @@ module.exports = (sequelize) => {
       account_id: this.accountId,
       provider: this.provider,
       chat_model: this.chatModel,
+      embedding_model: this.embeddingModel,
       label: this.label,
       masked_key: this.lastFour ? `****${this.lastFour}` : '****',
       priority_order: this.priorityOrder,

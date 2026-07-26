@@ -4,6 +4,8 @@ const express = require('express');
 const asyncHandler = require('../../core/asyncHandler');
 const { validate } = require('../../middleware/validate');
 const { authenticate } = require('../../middleware/authenticate');
+const { uploadLimiter } = require('../../middleware/rateLimit');
+const chatRoutes = require('../chat/chat.routes');
 const namespaceService = require('./namespace.service');
 const orgService = require('../orgs/org.service');
 const projectService = require('../projects/project.service');
@@ -298,6 +300,46 @@ router.delete(
   asyncHandler(async (req, res) => {
     await accountKeyService.removeApiKey(req.namespace.id, req.params.keyId);
     res.status(204).send();
+  }),
+);
+
+/*
+ * The assistant.
+ *
+ * Mounted after `:namespace` has been resolved, so every chat route inherits
+ * the namespace and the caller's role in it. Any member may talk to it: the
+ * tools it can call each enforce their own role, so a MEMBER asking it to
+ * create a project is refused by the tool rather than by the door.
+ */
+router.use('/:namespace/chat', chatRoutes);
+
+/**
+ * Adds target languages across a namespace in one call.
+ *
+ * The per file endpoint is the right shape for one file. Adding a language to
+ * everything an account owns through it means finding every project, then every
+ * file, then calling it once per file, which is a loop the client should not
+ * have to write and cannot make atomic anyway.
+ */
+router.post(
+  '/:namespace/languages',
+  uploadLimiter,
+  validate(projectSchemas.addNamespaceLanguagesSchema),
+  asyncHandler(async (req, res) => {
+    if (req.namespace.type === 'ORG') {
+      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+    }
+
+    const result = await projectService.addLanguagesAcrossProjects({
+      namespaceAccountId: req.namespace.id,
+      projectIds: req.body.project_ids,
+      allProjects: req.body.all_projects === true,
+      targetLangs: req.body.target_langs,
+    });
+
+    // 202: the files are updated, the translating continues on workers and the
+    // client polls each file's status.
+    res.status(202).json({ data: result });
   }),
 );
 

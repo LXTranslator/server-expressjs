@@ -144,6 +144,8 @@ const config = Object.freeze({
     authMax: readInteger('RATE_LIMIT_AUTH_MAX', 10, { min: 3 }),
     availabilityMax: readInteger('RATE_LIMIT_AVAILABILITY_MAX', 20, { min: 5 }),
     uploadMax: readInteger('RATE_LIMIT_UPLOAD_MAX', 20, { min: 1 }),
+    /** Each chat turn is several paid model calls, so it gets its own bucket. */
+    chatMax: readInteger('RATE_LIMIT_CHAT_MAX', 30, { min: 1 }),
     /** Disabled under test so the suite is not throttled by its own speed. */
     enabled: readBoolean('RATE_LIMIT_ENABLED', !isTest),
   }),
@@ -172,6 +174,27 @@ const config = Object.freeze({
     requestTimeoutMs: readInteger('AI_REQUEST_TIMEOUT_MS', 30000, { min: 1000 }),
     maxAttemptsPerKey: readInteger('AI_MAX_ATTEMPTS_PER_KEY', 2, { min: 1, max: 5 }),
     batchSize: readInteger('AI_BATCH_SIZE', 25, { min: 1, max: 200 }),
+  }),
+
+  chat: Object.freeze({
+    /**
+     * How many times the assistant may decide, act and look again within one
+     * request. Every pass is a paid model call, so the loop is bounded by
+     * configuration rather than by the model choosing to stop.
+     */
+    maxRepeats: readInteger('AGENTS_CHAT_REPEAT', 5, { min: 1, max: 20 }),
+    /** Past exchanges replayed as context, which is what bounds the prompt. */
+    historyTurns: readInteger('AGENTS_CHAT_HISTORY_TURNS', 10, { min: 0, max: 100 }),
+    maxPromptCharacters: readInteger('AGENTS_CHAT_MAX_PROMPT', 8000, { min: 100 }),
+    /**
+     * Chat logs held in memory while the database is unavailable. Bounded
+     * because a buffer that grows without limit turns a database outage into a
+     * memory exhaustion.
+     */
+    logBufferSize: readInteger('AGENTS_CHAT_LOG_BUFFER', 500, { min: 1 }),
+    logRetryMs: readInteger('AGENTS_CHAT_LOG_RETRY_MS', 5000, { min: 100 }),
+    /** Rows one backfill request may embed, so the call stays bounded. */
+    embeddingBackfillLimit: readInteger('AGENTS_CHAT_EMBED_BATCH', 50, { min: 1, max: 500 }),
   }),
 
   workers: Object.freeze({

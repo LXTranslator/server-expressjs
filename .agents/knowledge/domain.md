@@ -66,6 +66,12 @@ database access at all: it receives a self contained job and returns a plain
 result, and the main thread writes it in one transaction. Keep it that way;
 opening a connection inside a worker would put a pool in every thread.
 
+That rule is about the **pipeline**. The assistant in `src/modules/chat/` runs
+on the main thread, deliberately: a chat turn is network waiting plus database
+queries rather than parsing and hashing, and its tools need the connection pool
+a worker is kept away from. Do not move it, and do not use it as a precedent for
+moving pipeline work back.
+
 ## Common mistakes
 
 - Translating a target language from the original upload instead of the master.

@@ -13,6 +13,8 @@ const addAccountApiKeySchema = z
   .object({
     provider: z.string().trim().max(50),
     chat_model: z.string().trim().max(100).optional(),
+    /** Null and the empty string both mean "no embeddings", which is allowed. */
+    embedding_model: z.string().trim().max(100).nullable().optional(),
     api_key: z
       .string()
       .trim()
@@ -28,6 +30,7 @@ const updateAccountApiKeySchema = z
   .object({
     provider: z.string().trim().max(50).optional(),
     chat_model: z.string().trim().max(100).optional(),
+    embedding_model: z.string().trim().max(100).nullable().optional(),
     api_key: z.string().trim().min(8).max(500).optional(),
     label: z.string().trim().max(80).optional(),
     priority_order: z.number().int().min(1).max(1000).optional(),

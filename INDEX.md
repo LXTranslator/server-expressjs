@@ -88,9 +88,11 @@ Adapters for everything outside the process.
 | [`src/infrastructure/crypto/secretBox.js`](src/infrastructure/crypto/secretBox.js) | AES 256 GCM encryption for stored credentials. |
 | [`src/infrastructure/email/mailer.js`](src/infrastructure/email/mailer.js) | Console and SMTP mail transports. |
 | [`src/infrastructure/ai/providerError.js`](src/infrastructure/ai/providerError.js) | Provider failure categories driving the fallback chain. |
-| [`src/infrastructure/ai/prompt.js`](src/infrastructure/ai/prompt.js) | Prompt construction and reply validation. |
+| [`src/infrastructure/ai/prompt.js`](src/infrastructure/ai/prompt.js) | Translation prompt construction and reply validation. |
+| [`src/infrastructure/ai/chatPrompt.js`](src/infrastructure/ai/chatPrompt.js) | Assistant prompt construction and tool result rendering. |
 | [`src/infrastructure/ai/keyFallback.js`](src/infrastructure/ai/keyFallback.js) | Credential fallback executor, shared by the pipeline and the account chain. |
-| [`src/infrastructure/ai/providers/index.js`](src/infrastructure/ai/providers/index.js) | Fixed provider registry. |
+| [`src/infrastructure/ai/providers/index.js`](src/infrastructure/ai/providers/index.js) | Fixed provider registry, chat and embedding catalogues. |
+| [`src/infrastructure/ai/providers/openaiChat.js`](src/infrastructure/ai/providers/openaiChat.js) | Chat completions wire format shared by OpenAI and OpenRouter. |
 | [`src/infrastructure/ai/providers/mock.js`](src/infrastructure/ai/providers/mock.js) | Offline provider for zero configuration runs. |
 | [`src/infrastructure/ai/providers/openai.js`](src/infrastructure/ai/providers/openai.js) | OpenAI chat completions adapter. |
 | [`src/infrastructure/ai/providers/anthropic.js`](src/infrastructure/ai/providers/anthropic.js) | Anthropic messages adapter. |
@@ -129,6 +131,12 @@ One directory per business capability.
 | [`src/modules/namespaces/namespace.service.js`](src/modules/namespaces/namespace.service.js) | Namespace, project and file access resolution. |
 | [`src/modules/orgs/org.service.js`](src/modules/orgs/org.service.js) | Organization creation, profile and membership. |
 | [`src/modules/orgs/org.schemas.js`](src/modules/orgs/org.schemas.js) | Organization request schemas. |
+| [`src/modules/chat/chat.routes.js`](src/modules/chat/chat.routes.js) | Assistant, history, search and embedding routes. |
+| [`src/modules/chat/chat.service.js`](src/modules/chat/chat.service.js) | The bounded agent loop. |
+| [`src/modules/chat/chat.tools.js`](src/modules/chat/chat.tools.js) | Tool catalogue and dispatch, with authorization in backend code. |
+| [`src/modules/chat/chat.schemas.js`](src/modules/chat/chat.schemas.js) | Assistant request schemas. |
+| [`src/modules/chat/chatLog.service.js`](src/modules/chat/chatLog.service.js) | Asynchronous chat logging with an in memory retry buffer. |
+| [`src/modules/chat/embedding.service.js`](src/modules/chat/embedding.service.js) | Conversation embeddings, search and backfill. |
 | [`src/modules/projects/project.routes.js`](src/modules/projects/project.routes.js) | Project, credential and upload routes. |
 | [`src/modules/projects/project.service.js`](src/modules/projects/project.service.js) | Project settings and credential management. |
 | [`src/modules/projects/project.schemas.js`](src/modules/projects/project.schemas.js) | Project request schemas. |
@@ -183,6 +191,7 @@ Off thread execution of the translation pipeline.
 | [`tests/accountAi.test.js`](tests/accountAi.test.js) | Namespace AI credentials, the organization to personal fallback chain and the chat log table. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
+| [`tests/chat.test.js`](tests/chat.test.js) | The agent loop, every tool, tool level authorization, buffered logging, search and embeddings. |
 
 ## Agent Configuration
 

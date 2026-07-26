@@ -1,6 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
+const { langCodeSchema } = require('../files/file.schemas');
 
 /** Project names are shown in paths and headings, so control characters are out. */
 const projectNameSchema = z
@@ -53,6 +54,33 @@ const updateApiKeySchema = z
   })
   .strict();
 
+/** A description on its own, for the endpoint that changes nothing else. */
+const updateProjectDescriptionSchema = z
+  .object({ description: z.string().trim().max(500) })
+  .strict();
+
+/**
+ * Languages to add across a namespace.
+ *
+ * Either an explicit list of projects or every project, never both implicitly:
+ * "add Thai everywhere" and "add Thai to these three" are different enough
+ * intentions that the payload should have to say which one it means.
+ */
+const addNamespaceLanguagesSchema = z
+  .object({
+    target_langs: z
+      .array(langCodeSchema)
+      .min(1, 'Select at least one language to add.')
+      .max(50, 'Add 50 languages or fewer at a time.'),
+    project_ids: z.array(z.number().int().positive()).min(1).max(50).optional(),
+    all_projects: z.boolean().optional(),
+  })
+  .strict()
+  .refine((data) => data.all_projects === true || (data.project_ids?.length ?? 0) > 0, {
+    message: 'Name the projects, or set all_projects.',
+    path: ['project_ids'],
+  });
+
 const reorderApiKeysSchema = z
   .object({ ordered_key_ids: z.array(z.string().uuid()).min(1).max(50) })
   .strict();
@@ -60,6 +88,8 @@ const reorderApiKeysSchema = z
 module.exports = {
   createProjectSchema,
   updateProjectSchema,
+  updateProjectDescriptionSchema,
+  addNamespaceLanguagesSchema,
   addApiKeySchema,
   updateApiKeySchema,
   reorderApiKeysSchema,

@@ -238,6 +238,82 @@ development credential is appended, which is what keeps the assistant runnable
 on a clean clone. That fallback is refused in production, exactly as it is for
 the translation pipeline.
 
+## The assistant
+
+The assistant answers questions about an account's namespaces, projects and
+files, and can act on them. One turn is a bounded loop:
+
+```
+message + recent history + tool catalogue
+       │
+       ├─ the model answers in text        -> done
+       ├─ the model calls "stop"           -> done, with its summary
+       └─ the model calls a tool
+             │  the tool checks permission itself, in backend code
+             └─ the result goes back as data -> look again, up to the ceiling
+```
+
+The ceiling is `AGENTS_CHAT_REPEAT`, default five. Reaching it ends the turn
+with an honest answer rather than another paid call, because a loop whose only
+brake is the model deciding it is finished has no brake.
+
+### The model has no authority
+
+Every tool resolves access itself, on every call, against the authenticated
+account, through the same functions the HTTP routes use. The model may name any
+namespace or project, including one invented by text inside a locale file;
+naming one the caller is not entitled to fails exactly as the REST API fails.
+
+That is the answer to prompt injection here. Nothing in the system prompt is
+what stops it, and nothing is claimed for the prompt beyond saving a wasted
+turn. See `.agents/security/excessive-agency.md`.
+
+Tool arguments are written by the model, so they are validated by a strict
+schema before a service sees them, exactly like a request body. A refusal comes
+back as a result the assistant can explain, not as an exception.
+
+### Where it runs
+
+On the main thread, unlike the translation pipeline. The pipeline is moved to a
+worker because it parses and hashes, which is CPU work that would stall the
+event loop. A chat turn is network waiting plus database queries, and its tools
+need the connection pool that workers are deliberately kept away from.
+
+### Logging without waiting
+
+The person waiting for an answer should not also wait for a row to be written,
+and a log lost to a database blink is worse than one written late. So an
+exchange is held in memory and written asynchronously; a failed write leaves it
+buffered and schedules a retry, and only a successful write removes it.
+
+The buffer is bounded by `AGENTS_CHAT_LOG_BUFFER`. An unbounded one turns a
+database outage into a memory exhaustion. At the ceiling the oldest entry is
+dropped and the loss is logged loudly, because a silently discarded audit
+record is the one failure here that must never be quiet.
+
+`GET /namespaces/:namespace/chat/log_buffer` reports what is still waiting.
+
+### Embeddings
+
+Each account configures two models: a chat model, and optionally an embedding
+model. The embedding model is an optimisation and is treated as one. With none
+configured the assistant works exactly as it otherwise would, stores no vectors,
+and searches conversations by text instead.
+
+Generating a vector never blocks an answer. The exchange is logged first and the
+vector attached afterwards; a failure leaves the column empty and a later
+backfill picks the row up.
+
+Vectors are stored as JSON text rather than in a native vector column, because
+the application has to run on SQLite with no configuration at all. Ranking
+happens in the process over a bounded candidate set, which is honest about what
+this is: good search over a personal conversation history, not a vector
+database.
+
+A conversation is scoped to the person who had it. An organization pays for the
+assistant and can see what it spends, but an administrator cannot read what a
+colleague asked.
+
 ## Authentication
 
 Two families of token:

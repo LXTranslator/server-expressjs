@@ -78,6 +78,37 @@ router.patch(
   }),
 );
 
+/*
+ * The description on its own.
+ *
+ * Separate from the settings payload because it is the one project field with
+ * no consequence: changing it cannot invalidate a credential, retarget a
+ * provider or cost anything. Reading it needs no more than access to the
+ * project; changing it is a settings change like any other.
+ */
+
+router.get(
+  '/:projectId/description',
+  asyncHandler(async (req, res) => {
+    res.json({
+      data: { project_id: req.project.id, description: req.project.description },
+    });
+  }),
+);
+
+router.put(
+  '/:projectId/description',
+  requireProjectAdmin,
+  validate(schemas.updateProjectDescriptionSchema),
+  asyncHandler(async (req, res) => {
+    const project = await projectService.updateProjectDescription(
+      req.project,
+      req.body.description,
+    );
+    res.json({ data: { project_id: project.id, description: project.description } });
+  }),
+);
+
 router.delete(
   '/:projectId',
   requireProjectAdmin,

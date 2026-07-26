@@ -90,6 +90,36 @@ const multerUpload = multer({
  * @returns {void}
  */
 function uploadTranslationFile(req, res, next) {
+  acceptTranslationFile(req, res, next, { required: true });
+}
+
+/**
+ * Accepts an optional translation file on the `file` field.
+ *
+ * For endpoints where an attachment is one possible part of a request rather
+ * than its subject, such as a message to the assistant. Every check a required
+ * upload gets still applies when a file is present; the only difference is that
+ * its absence is not an error.
+ *
+ * @param {import('express').Request} req Request.
+ * @param {import('express').Response} res Response.
+ * @param {Function} next Express next handler.
+ * @returns {void}
+ */
+function optionalTranslationFile(req, res, next) {
+  acceptTranslationFile(req, res, next, { required: false });
+}
+
+/**
+ * Shared multipart handling for both variants.
+ *
+ * @param {import('express').Request} req Request.
+ * @param {import('express').Response} res Response.
+ * @param {Function} next Express next handler.
+ * @param {{required: boolean}} options Whether a file must be present.
+ * @returns {void}
+ */
+function acceptTranslationFile(req, res, next, options) {
   multerUpload.single('file')(req, res, (error) => {
     if (error) {
       if (error instanceof multer.MulterError) {
@@ -113,7 +143,11 @@ function uploadTranslationFile(req, res, next) {
     }
 
     if (!req.file) {
-      next(new BadRequestError('No file was uploaded. Attach one under the "file" field.'));
+      if (options.required) {
+        next(new BadRequestError('No file was uploaded. Attach one under the "file" field.'));
+        return;
+      }
+      next();
       return;
     }
 
@@ -138,4 +172,4 @@ function uploadTranslationFile(req, res, next) {
   });
 }
 
-module.exports = { uploadTranslationFile };
+module.exports = { uploadTranslationFile, optionalTranslationFile };

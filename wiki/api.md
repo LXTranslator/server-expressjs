@@ -75,6 +75,7 @@ A caller who is not entitled to a resource receives **404, not 403**, wherever a
 | Credentials (`/auth/*`, `/settings/confirm`) | 10 per minute. |
 | Availability probe | 20 per minute. |
 | Uploads | 20 per minute. |
+| Assistant turns | 30 per minute. One turn may be several provider calls. |
 
 ---
 
@@ -122,6 +123,28 @@ OpenRouter brokers several vendors through one credential, its model names carry
 a vendor prefix; a project set to `openrouter` can change vendor by changing the
 model, without a new key. `ai_model` must be one of the names the catalogue
 lists for the chosen provider, or the request is **400**.
+
+Each entry also carries `embedding_models`, `default_embedding_model` and
+`supports_caching`, which is what an account settings page needs to offer both
+dropdowns:
+
+| Platform | Embedding models |
+|---|---|
+| `openrouter` | `qwen/qwen3-embedding-8b` (default), `openai/text-embedding-3-small`, `openai/text-embedding-3-large`, `qwen/qwen3-embedding-4b` |
+| `openai` | `text-embedding-3-small` (default), `text-embedding-3-large` |
+| `anthropic` | none |
+| `mock` | `mock-embedding` |
+
+Anthropic's list is empty because it serves no embeddings endpoint of its own
+and points at external partners for it. An account using Anthropic for chat
+either leaves the embedding model empty, which the assistant handles, or adds a
+second credential on a platform that does serve one.
+
+`supports_caching` reports whether the platform caches a prompt prefix.
+OpenRouter and Anthropic are sent an explicit cache mark on the system
+instruction, which matters most in the assistant: one question may take several
+passes, and without it the same instruction and tool catalogue are charged in
+full on every pass.
 
 ---
 
@@ -409,6 +432,7 @@ and its last four characters.
         "id": "...",
         "provider": "openrouter",
         "chat_model": "openai/gpt-4o-mini",
+        "embedding_model": "qwen/qwen3-embedding-8b",
         "label": "organization primary",
         "masked_key": "****7890",
         "priority_order": 1,
@@ -473,6 +497,7 @@ naming a removed format become **404**.
 {
   "provider": "openrouter",
   "chat_model": "openai/gpt-4o-mini",
+  "embedding_model": "qwen/qwen3-embedding-8b",
   "api_key": "your_provider_api_key",
   "label": "organization primary",
   "priority_order": 1,
@@ -481,17 +506,27 @@ naming a removed format become **404**.
 ```
 
 Returns **201**. Unlike a project credential, each row names its own platform
-and model, because an account has no record to take them from. `provider` must
+and models, because an account has no record to take them from. `provider` must
 be in the registry `GET /providers` lists and `chat_model` must be one of that
 platform's models, otherwise **400**. `chat_model` defaults to the platform's
 own default. `priority_order` defaults to the end of the chain. An account may
 hold 20 credentials.
 
+`embedding_model` is optional and `null` is meaningful: an account with no
+embedding model chats normally, stores no vectors, and searches conversations by
+text. Naming one the platform does not serve is **400**, and for Anthropic every
+name is, since it serves no embeddings endpoint.
+
+The first credential in the chain that names an embedding model is the one that
+produces vectors, so an organization can pay for search while a personal
+credential only answers chat, or the reverse.
+
 ### `PATCH /namespaces/:namespace/settings/ai_keys/:keyId`
 
-Any of `provider`, `chat_model`, `api_key`, `label`, `priority_order`,
-`is_active`. Changing the platform without naming a model falls back to that
-platform's default.
+Any of `provider`, `chat_model`, `embedding_model`, `api_key`, `label`,
+`priority_order`, `is_active`. Changing the platform without naming a model
+falls back to that platform's default, and drops an embedding model the new
+platform cannot serve rather than failing the whole update.
 
 ### `POST /namespaces/:namespace/settings/ai_keys/reorder`
 
@@ -519,6 +554,164 @@ simply the chain with no organization ahead of it.
 
 With no credential configured anywhere, and outside production, the built in
 development credential answers, so the assistant works on a clean clone.
+
+---
+
+## The assistant
+
+Answers questions about a namespace and acts on it through a fixed set of tools.
+All routes require authentication and access to the namespace. Any member may
+talk to it: each tool enforces its own role, so a `MEMBER` asking it to create a
+project is refused by the tool rather than at the door.
+
+### `POST /namespaces/:namespace/chat`
+
+```json
+{ "message": "Which languages does the web app project have?", "session_id": "..." }
+```
+
+Also accepts `multipart/form-data` with a `message` field and an optional `file`
+part, which lets the assistant create a project from an attached locale file.
+The attachment passes exactly the checks an ordinary upload passes.
+
+| Field | Required | Notes |
+|---|---|---|
+| `message` | yes | Up to `AGENTS_CHAT_MAX_PROMPT` characters. |
+| `session_id` | no | Continues that conversation. Absent starts a new one. |
+| `file` | no | Multipart only. A `.json` locale file, same limits as an upload. |
+
+```json
+{
+  "data": {
+    "session_id": "...",
+    "answer": "The web app project has th_th and ja_jp.",
+    "namespace": "acme_corp",
+    "tool_calls": [{ "name": "check_project_languages", "ok": true }],
+    "steps": 2,
+    "stopped_by_tool": false,
+    "token_usage": 812,
+    "total_token_usage": 3140
+  }
+}
+```
+
+`steps` never exceeds `AGENTS_CHAT_REPEAT`, default 5. A tool that refuses does
+not fail the request: it appears in `tool_calls` with `ok: false` and an
+`error`, and the assistant explains it in the answer.
+
+**503** when no credential in the namespace chain can answer. See
+*Account AI credentials* for how that chain is assembled.
+
+### Tools the assistant may call
+
+| Tool | Effect | Role required |
+|---|---|---|
+| `switch_namespace` | Changes the namespace the conversation acts in | Membership, proven per call |
+| `list_projects` | Lists the current namespace's projects | Namespace access |
+| `check_project_languages` | Master language, per file sources and targets | Project access |
+| `get_project_description` | Reads a description | Project access |
+| `update_project_description` | Replaces a description | `ADMIN` in an organization |
+| `create_project` | Creates a project, uploading the attachment when present | `ADMIN` in an organization |
+| `add_languages` | Adds targets to one project, several, or all | `ADMIN` in an organization |
+| `find_chat` | Searches the caller's own past conversations | Namespace access |
+| `stop` | Ends the turn with a summary | None |
+
+**The model authorises nothing.** Every tool resolves access itself, on every
+call, against the signed in account, through the same functions the REST routes
+use. Naming a namespace or project the caller cannot reach fails with the same
+message the API would give. Tool arguments are validated by a strict schema
+before any service sees them.
+
+`create_project` instructs rather than guesses: asked to translate with no file
+attached it says so, and a name already taken comes back with a suggestion to
+choose another.
+
+`add_languages` touches at most 25 projects per call. Files that cannot take a
+language are reported in `skipped` with a reason rather than failing the rest.
+
+### `GET /namespaces/:namespace/chat/sessions/:sessionId`
+
+Reads a conversation back, most recent turns first written oldest first.
+
+| Query | Required | Notes |
+|---|---|---|
+| `limit` | no | Turns to read. Defaults to `AGENTS_CHAT_HISTORY_TURNS`. |
+
+Always the caller's own conversation. A session identifier belonging to somebody
+else returns an empty history rather than a 403, since a 403 would confirm it
+exists.
+
+### `GET /namespaces/:namespace/chat/search`
+
+| Query | Required | Notes |
+|---|---|---|
+| `q` | yes | What to look for. |
+| `limit` | no | At most 20. Defaults to 5. |
+
+```json
+{
+  "data": {
+    "method": "EMBEDDING",
+    "matches": [{ "id": 42, "user_prompt": "...", "score": 0.87 }]
+  }
+}
+```
+
+`method` is `EMBEDDING` when an embedding model is configured and the rows carry
+vectors, and `TEXT` otherwise, so a client can explain why a search found less
+than expected. Scoped to the caller's own conversations.
+
+### `POST /namespaces/:namespace/chat/embeddings`
+
+Embeds past exchanges that have no vector yet, for the account that chatted
+before configuring an embedding model.
+
+```json
+{ "limit": 50 }
+```
+
+```json
+{
+  "data": {
+    "embedded": 50,
+    "failed": 0,
+    "remaining": 118,
+    "model": "qwen/qwen3-embedding-8b",
+    "configured": true
+  }
+}
+```
+
+Bounded per call by `AGENTS_CHAT_EMBED_BATCH`, so a long history is caught up
+over several requests. `configured: false` with `embedded: 0` means the account
+has no embedding model, which is not an error.
+
+### `GET /namespaces/:namespace/chat/log_buffer`
+
+Chat logs are written asynchronously and survive a failed write in memory, so
+this reports what is still waiting.
+
+```json
+{ "data": { "pending": 0, "written": 128, "dropped": 0, "failures": 0 } }
+```
+
+### `POST /namespaces/:namespace/languages`
+
+Adds target languages across a namespace in one call, rather than once per file.
+
+```json
+{ "target_langs": ["ko_kr"], "all_projects": true }
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `target_langs` | yes | Locales to add. |
+| `project_ids` | one of the two | Projects to change, at most 50. |
+| `all_projects` | one of the two | Every project in the namespace. |
+
+Returns **202** with `applied` and `skipped`. A file that already carries a
+language, or a project with no files, is reported with a reason rather than
+failing the rest. Requires `ADMIN` or above inside an organization.
 
 ---
 
@@ -557,6 +750,24 @@ Project, its namespace and the caller's role.
 
 Changing the provider without naming a model falls back to that provider's
 default, since the previous model almost certainly does not exist there.
+
+### `GET /projects/:projectId/description`
+
+```json
+{ "data": { "project_id": 12, "description": "Marketing site strings" } }
+```
+
+Separate from the settings payload because the description is the one project
+field with no consequence: changing it cannot invalidate a credential, retarget
+a provider or cost anything. Reading it needs only access to the project.
+
+### `PUT /projects/:projectId/description`
+
+```json
+{ "description": "Marketing site strings" }
+```
+
+An empty string clears it. Requires `ADMIN` or above inside an organization.
 
 ### `DELETE /projects/:projectId`
 

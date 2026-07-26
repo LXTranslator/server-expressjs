@@ -60,6 +60,37 @@ function resolveProviderModel(providerName, model) {
 }
 
 /**
+ * Validates an embedding model against the platform that would serve it.
+ *
+ * Leaving it unset is the ordinary case, not an error: an account with no
+ * embedding model chats exactly as it otherwise would and simply stores no
+ * vectors. Naming one a platform does not serve is an error, and for Anthropic
+ * every name is, because it serves no embeddings endpoint at all.
+ *
+ * @param {object} provider Resolved provider adapter.
+ * @param {string|null|undefined} model Embedding model name.
+ * @returns {string|null} The accepted model, or null when none was named.
+ * @throws {BadRequestError} When the platform does not offer that model.
+ */
+function resolveEmbeddingModel(provider, model) {
+  if (model === undefined || model === null || model === '') return null;
+
+  const offered = provider.embeddingModels ?? [];
+  if (offered.length === 0) {
+    throw new BadRequestError(
+      `${provider.label} does not serve embeddings. Leave the embedding model empty, or add a credential on a platform that does.`,
+    );
+  }
+  if (!offered.includes(model)) {
+    throw new BadRequestError(
+      `The embedding model "${model}" is not offered by ${provider.label}.`,
+    );
+  }
+
+  return model;
+}
+
+/**
  * Lists an account's credentials without exposing any key material.
  *
  * @param {string} accountId Account identifier.
@@ -89,7 +120,8 @@ async function addApiKey(accountId, input) {
     );
   }
 
-  const { chatModel } = resolveProviderModel(input.provider, input.chat_model);
+  const { provider, chatModel } = resolveProviderModel(input.provider, input.chat_model);
+  const embeddingModel = resolveEmbeddingModel(provider, input.embedding_model);
 
   // Appending to the end of the chain is the least surprising default: a new
   // key should not silently displace the one already in use.
@@ -99,6 +131,7 @@ async function addApiKey(accountId, input) {
     accountId,
     provider: input.provider,
     chatModel,
+    embeddingModel,
     apiKey: encryptSecret(input.api_key),
     label: input.label ?? null,
     lastFour: input.api_key.slice(-4),
@@ -131,15 +164,32 @@ async function updateApiKey(accountId, keyId, input) {
 
   const updates = {};
 
+  const platformChanged = input.provider !== undefined && input.provider !== key.provider;
+
   if (input.provider !== undefined || input.chat_model !== undefined) {
     const providerName = input.provider ?? key.provider;
     // Changing platform without naming a model falls back to that platform's
     // default, because the previous model almost certainly does not exist there.
-    const model =
-      input.chat_model ?? (providerName === key.provider ? key.chatModel : undefined);
+    const model = input.chat_model ?? (platformChanged ? undefined : key.chatModel);
     const resolved = resolveProviderModel(providerName, model);
     updates.provider = providerName;
     updates.chatModel = resolved.chatModel;
+  }
+
+  if (input.embedding_model !== undefined || platformChanged) {
+    const { provider } = resolveProviderModel(
+      updates.provider ?? key.provider,
+      updates.chatModel ?? key.chatModel,
+    );
+    // Moving platform drops an embedding model the new one cannot serve rather
+    // than failing the whole update, since the caller was changing platform and
+    // not asking anything about embeddings.
+    const wanted = input.embedding_model !== undefined ? input.embedding_model : key.embeddingModel;
+    const offered = provider.embeddingModels ?? [];
+    updates.embeddingModel =
+      input.embedding_model === undefined && !offered.includes(wanted)
+        ? null
+        : resolveEmbeddingModel(provider, wanted);
   }
 
   if (input.label !== undefined) updates.label = input.label;
@@ -221,6 +271,7 @@ async function loadForAccount(accountId, origin) {
         origin,
         provider: row.provider,
         chatModel: row.chatModel,
+        embeddingModel: row.embeddingModel,
         apiKey: decryptSecret(row.apiKey),
         label: row.label,
         lastFour: row.lastFour,
@@ -280,6 +331,7 @@ async function loadDecryptedKeys({ namespace, actor }) {
       origin: 'BUILT_IN',
       provider: config.ai.defaultProvider,
       chatModel: config.ai.defaultModel,
+      embeddingModel: null,
       apiKey: config.ai.defaultApiKey,
       label: 'Built in development key',
       lastFour: null,
@@ -287,6 +339,25 @@ async function loadDecryptedKeys({ namespace, actor }) {
   }
 
   return keys;
+}
+
+/**
+ * Finds the credential that should produce embeddings for an account.
+ *
+ * The first entry in the chain that names an embedding model wins, so an
+ * organization can pay for search while a member's personal credential only
+ * answers chat, or the reverse. No embedding model anywhere is a normal state
+ * and returns null rather than raising.
+ *
+ * @param {object} params Chain parameters.
+ * @param {object} params.namespace Namespace account the caller is acting in.
+ * @param {object} params.actor Authenticated account making the request.
+ * @returns {Promise<object|null>} Credential to embed with, or null.
+ */
+async function loadEmbeddingKey({ namespace, actor }) {
+  const keys = await loadDecryptedKeys({ namespace, actor });
+  return keys.find((key) => typeof key.embeddingModel === 'string' && key.embeddingModel.length > 0)
+    ?? null;
 }
 
 /**
@@ -323,7 +394,9 @@ module.exports = {
   reorderApiKeys,
   removeApiKey,
   loadDecryptedKeys,
+  loadEmbeddingKey,
   recordKeyAttempts,
   resolveProviderModel,
+  resolveEmbeddingModel,
   MAX_KEYS_PER_ACCOUNT,
 };
