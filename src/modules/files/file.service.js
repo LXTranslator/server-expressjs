@@ -25,8 +25,20 @@ const { BadRequestError, ConflictError, NotFoundError } = require('../../core/er
  * provider takes, which on a large file is minutes.
  */
 
-/** Locale codes accepted for source and target languages. */
-const LANG_CODE_PATTERN = /^[a-z]{2}(_[a-z0-9]{2,8})?$/;
+/**
+ * Locale codes accepted for source and target languages.
+ *
+ * Two to eight lowercase letters, optionally followed by an underscore and a
+ * two to eight character region or script subtag.
+ *
+ * The language part is not two letters. Plenty of locales worth translating
+ * into have no two letter code at all, and a stricter rule would silently put
+ * them out of reach: `bar` for Bavarian, `nds_de` for Low German, `zlm_arab`
+ * for Malay in Jawi script, `sah_sah` for Yakut. What the pattern still
+ * guarantees is the only thing it is here to guarantee, that the value is safe
+ * to place in a generated filename.
+ */
+const LANG_CODE_PATTERN = /^[a-z]{2,8}(_[a-z0-9]{2,8})?$/;
 
 /**
  * Validates a locale code.
@@ -42,7 +54,7 @@ function assertLangCode(code) {
   const normalized = String(code).trim().toLowerCase();
   if (!LANG_CODE_PATTERN.test(normalized)) {
     throw new BadRequestError(
-      `"${code}" is not a valid locale code. Use a form such as en_us or th_th.`,
+      `"${code}" is not a valid locale code. Use a form such as en_us, th_th or nds_de.`,
     );
   }
   return normalized;
