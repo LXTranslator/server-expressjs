@@ -1,6 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
+const { isReservedIdentifier } = require('../../core/reservedIdentifiers');
 
 /**
  * Request schemas for the authentication module.
@@ -14,8 +15,14 @@ const { z } = require('zod');
  * rather than quietly ignored.
  */
 
-/** Routing identifier: lowercase letters, digits and underscores. */
-const userIdSchema = z
+/**
+ * Routing identifier: lowercase letters, digits and underscores.
+ *
+ * The identifier is also the first segment of the namespace's client URL, so a
+ * handful of names the client already routes are refused. See
+ * `core/reservedIdentifiers`.
+ */
+const userIdFormatSchema = z
   .string()
   .trim()
   .min(3, 'The user id must be at least 3 characters.')
@@ -24,6 +31,10 @@ const userIdSchema = z
     /^[a-z0-9_]+$/,
     'The user id may contain only lowercase letters, digits and underscores.',
   );
+
+const userIdSchema = userIdFormatSchema.refine((value) => !isReservedIdentifier(value), {
+  message: 'That user id is reserved. Choose another.',
+});
 
 const emailSchema = z
   .string()
@@ -81,9 +92,15 @@ const resetPasswordSchema = z
     path: ['confirm_password'],
   });
 
+/*
+ * The probe validates the shape only. A reserved identifier is well formed and
+ * simply unavailable, so it is answered as taken rather than rejected, which is
+ * what keeps the inline hint on the registration form consistent with what
+ * submitting it would do.
+ */
 const availabilitySchema = z
   .object({
-    user_id: userIdSchema.optional(),
+    user_id: userIdFormatSchema.optional(),
     email: emailSchema.optional(),
   })
   .strict()
@@ -93,6 +110,7 @@ const availabilitySchema = z
 
 module.exports = {
   userIdSchema,
+  userIdFormatSchema,
   emailSchema,
   passwordSchema,
   registerSchema,
