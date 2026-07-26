@@ -72,17 +72,77 @@ router.patch(
   }),
 );
 
-/** Applies a correction to a master string, restamping its fingerprint. */
+/**
+ * Applies a correction to one master string, restamping its fingerprint.
+ *
+ * One key at a time rather than a payload carrying the whole file, so a
+ * reviewer correcting a single string restamps a single fingerprint. The
+ * response reports whether the text actually changed and which languages fell
+ * behind, which is what a caller needs to decide whether there is anything to
+ * retranslate.
+ */
 router.patch(
   '/:fileId/keys/:keyId',
   validate(translationSchemas.updateMasterTextSchema),
   asyncHandler(async (req, res) => {
-    const key = await translationService.updateMasterText({
+    const result = await translationService.updateMasterText({
       fileId: req.file.id,
       keyId: req.params.keyId,
       originalText: req.body.original_text,
     });
-    res.json({ data: { key } });
+    res.json({ data: result });
+  }),
+);
+
+/**
+ * Retranslates named keys only.
+ *
+ * The rerun endpoint refreshes every key in the file, which is the wrong price
+ * for a corrected string. Here the caller names the keys, and nothing else is
+ * sent to a provider or rewritten.
+ *
+ * No role beyond namespace access is required. A member can already edit master
+ * text and upload files, both of which cost provider quota, so demanding ADMIN
+ * to refresh at most two hundred keys would gate the cheap operation while
+ * leaving the expensive ones open. The upload limiter applies instead.
+ */
+router.post(
+  '/:fileId/keys/retranslate',
+  uploadLimiter,
+  validate(translationSchemas.retranslateKeysSchema),
+  asyncHandler(async (req, res) => {
+    const { file, keys, targetLangs } = await fileService.retranslateKeys({
+      file: req.file,
+      project: req.project,
+      keyIds: req.body.key_ids,
+      targetLangs: req.body.target_langs,
+    });
+
+    // 202: the keys are queued, the translating continues on a worker and the
+    // client polls the file's status.
+    res.status(202).json({
+      data: { file: file.toPublicJson(), keys, target_langs: targetLangs },
+    });
+  }),
+);
+
+/**
+ * Validates that every language still matches the English master.
+ *
+ * On demand, never on write. The check compares the interpolation tokens of
+ * every key against every translation of it, which is work that has no business
+ * running while somebody is typing in the editor.
+ */
+router.get(
+  '/:fileId/consistency',
+  validate(translationSchemas.consistencyQuerySchema, 'query'),
+  asyncHandler(async (req, res) => {
+    const { lang } = validated(req, 'query');
+    const report = await translationService.validateKeyConsistency({
+      file: req.file,
+      langCode: lang,
+    });
+    res.json({ data: report });
   }),
 );
 

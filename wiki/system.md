@@ -154,6 +154,39 @@ Choosing `key_value` trades this away: the document holds no fingerprint, so
 staleness cannot be read from the file. `GET /files/:fileId/translations` still
 reports it, which is where the editor gets its warnings from either way.
 
+### Correcting one string
+
+A correction names one key, so it restamps one fingerprint. The response says
+whether the text really moved and which languages are now behind it, and a
+separate call refreshes exactly the keys named:
+
+```
+PATCH /files/:fileId/keys/:keyId        -> changed, stale_lang_codes
+POST  /files/:fileId/keys/retranslate   -> only those keys reach a provider
+```
+
+The whole file rerun still exists and is still the right tool after a failure.
+It is the wrong tool after a typo: it would send every key to a provider to
+refresh one of them.
+
+## Key consistency
+
+The pipeline guarantees a translation was produced from the master. It cannot
+guarantee the two still agree structurally afterwards. A model may drop a
+placeholder, a reviewer may retype `{name}` in their own language, and a locale
+added later may not cover every key. Each string looks fine on its own; the
+failure appears at runtime, as a literal brace on screen or a formatter handed
+fewer arguments than its format string expects.
+
+`GET /files/:fileId/consistency` compares the interpolation tokens of every key
+against every translation of it and reports missing tokens, invented tokens,
+missing rows, empty rows and stale rows.
+
+It runs only when asked. Comparing every key against every language on each edit
+would put the file's whole token set through a regular expression on every
+keystroke a reviewer makes, to answer a question nobody asked at that moment.
+The editor calls it when a person wants the answer.
+
 ## API key fallback
 
 A project may hold several credentials for its provider, ordered by
