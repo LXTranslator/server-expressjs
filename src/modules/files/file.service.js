@@ -204,10 +204,14 @@ async function persistPipelineResult(file, result) {
       }
     }
 
+    // Counted rather than taken from the result, because a merge run carries
+    // only the keys it added and would otherwise reset the total to those.
+    const keyCount = await TranslationKey.count({ where: { fileId: file.id }, transaction });
+
     await file.update(
       {
         status: 'READY',
-        keyCount: result.keys.length,
+        keyCount,
         errorMessage: null,
         processedAt: new Date(),
       },
@@ -226,9 +230,16 @@ async function persistPipelineResult(file, result) {
  * @param {object} params.file File model instance.
  * @param {object} params.project Owning project.
  * @param {string} params.content Verified file content.
+ * @param {string} [params.sourceLang] Locale of `content`, when it is not the
+ *   file's original upload language. A run rebuilt from stored master text is
+ *   already English, and saying so is what stops it being translated to English
+ *   a second time.
+ * @param {string[]} [params.targetLangs] Locales to produce, when only some of
+ *   the file's locales are wanted.
+ * @param {string[]} [params.skipKeyNames] Keys already held, left untouched.
  * @returns {Promise<void>}
  */
-async function processFile({ file, project, content }) {
+async function processFile({ file, project, content, sourceLang, targetLangs, skipKeyNames }) {
   try {
     await file.update({ status: 'PROCESSING', errorMessage: null });
 
@@ -236,17 +247,22 @@ async function processFile({ file, project, content }) {
 
     const { result, attempts } = await translationPool.run({
       content,
-      sourceLang: file.sourceLangCode,
-      targetLangs: file.targetLangCodes,
+      sourceLang: sourceLang ?? file.sourceLangCode,
+      targetLangs: targetLangs ?? file.targetLangCodes,
       provider: project.aiProvider,
       model: project.aiModel,
       keys,
+      skipKeyNames,
     });
 
     await persistPipelineResult(file, result);
     await projectService.recordKeyAttempts(attempts);
 
-    logger.info('File processed.', { fileId: file.id, keyCount: result.keys.length });
+    logger.info('File processed.', {
+      fileId: file.id,
+      keyCount: result.keys.length,
+      skippedKeyCount: result.skippedKeyCount ?? 0,
+    });
   } catch (error) {
     logger.error('File processing failed.', {
       fileId: file.id,
@@ -318,6 +334,115 @@ async function createUpload({ project, file, sourceLang, targetLangs }) {
 }
 
 /**
+ * Rebuilds the English master document from what is stored.
+ *
+ * A rerun must not depend on the original upload still being on disk, and the
+ * stored master is the authoritative text anyway: it carries every correction
+ * made in the editor since the upload.
+ *
+ * @param {string} fileId File identifier.
+ * @returns {Promise<{content: string, keyNames: string[]}>} Master document and
+ *   the key names it contains.
+ */
+async function buildMasterDocument(fileId) {
+  const keys = await TranslationKey.findAll({
+    where: { fileId },
+    attributes: ['keyName', 'originalText'],
+    order: [['key_name', 'ASC']],
+  });
+
+  return {
+    content: JSON.stringify(Object.fromEntries(keys.map((key) => [key.keyName, key.originalText]))),
+    keyNames: keys.map((key) => key.keyName),
+  };
+}
+
+/**
+ * Adds target locales to a file and translates the existing keys into them.
+ *
+ * Only the new locales are produced. The ones already present are not
+ * retranslated, so adding a language never disturbs work already reviewed, and
+ * costs provider quota for the new language alone.
+ *
+ * @param {object} params Parameters.
+ * @param {object} params.file File model instance.
+ * @param {object} params.project Owning project.
+ * @param {string[]} params.targetLangs Locales to add.
+ * @returns {Promise<{file: object, added: string[], processing: Promise<void>}>}
+ * @throws {BadRequestError} When no locale would be added or the file is empty.
+ */
+async function addTargetLanguages({ file, project, targetLangs }) {
+  const normalized = [...new Set(targetLangs.map(assertLangCode))];
+  const existing = new Set([...file.targetLangCodes, file.sourceLangCode, MASTER_LANG_CODE]);
+  const added = normalized.filter((code) => !existing.has(code));
+
+  if (added.length === 0) {
+    throw new BadRequestError('Every language listed is already on this file.');
+  }
+
+  const { content, keyNames } = await buildMasterDocument(file.id);
+  if (keyNames.length === 0) {
+    throw new BadRequestError('This file has no keys to translate yet.');
+  }
+
+  await file.update({ targetLangCodes: [...file.targetLangCodes, ...added] });
+
+  logger.info('Languages added to file.', { fileId: file.id, added });
+
+  // The document is rebuilt from the English master, so the source is English
+  // whatever the file was originally uploaded in.
+  const processing = processFile({
+    file,
+    project,
+    content,
+    sourceLang: MASTER_LANG_CODE,
+    targetLangs: added,
+  });
+
+  return { file, added, processing };
+}
+
+/**
+ * Merges a dropped document into a file, adding only keys it does not have.
+ *
+ * An existing key is left exactly as it is: its master text, its translations
+ * and any manual correction all survive. Only names absent from the file are
+ * translated, into every locale the file already carries.
+ *
+ * @param {object} params Parameters.
+ * @param {object} params.file File model instance.
+ * @param {object} params.project Owning project.
+ * @param {object} params.upload Multer file descriptor, already sanitised.
+ * @returns {Promise<{file: object, existingKeyCount: number, processing: Promise<void>}>}
+ * @throws {BadRequestError} When the document is not a JSON object.
+ */
+async function mergeKeys({ file, project, upload }) {
+  const content = assertJsonObject(upload.buffer);
+  const { keyNames } = await buildMasterDocument(file.id);
+
+  logger.info('Merging keys into file.', {
+    fileId: file.id,
+    bytes: upload.buffer.length,
+    existingKeyCount: keyNames.length,
+  });
+
+  /*
+   * The document is handed to the worker whole, together with the names already
+   * held, rather than being diffed here. Parsing and flattening are pipeline
+   * work and belong off the main thread; doing the comparison there also means
+   * one parse rather than two.
+   */
+  const processing = processFile({
+    file,
+    project,
+    content,
+    skipKeyNames: keyNames,
+  });
+
+  return { file, existingKeyCount: keyNames.length, processing };
+}
+
+/**
  * Deletes a file and everything under it.
  *
  * @param {string} projectId Owning project.
@@ -337,6 +462,9 @@ module.exports = {
   listFiles,
   createUpload,
   processFile,
+  addTargetLanguages,
+  mergeKeys,
+  buildMasterDocument,
   deleteFile,
   assertJsonObject,
   assertLangCode,

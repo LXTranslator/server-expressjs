@@ -4,6 +4,7 @@ const logger = require('../../core/logger');
 const { TranslationKey, Translation } = require('../../infrastructure/database/models');
 const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 const { computeTextHash } = require('../../core/textHash');
+const { createZipArchive } = require('../../core/zip');
 const { NotFoundError, BadRequestError } = require('../../core/errors');
 const {
   buildLocaleDocument,
@@ -18,6 +19,14 @@ const {
  * Backs the editor page, where a reviewer reads the English master alongside
  * every generated locale and corrects anything the model got wrong.
  */
+
+/**
+ * Name every archive download is offered under.
+ *
+ * Fixed rather than derived from the file, so a person collecting locale sets
+ * from several files gets a predictable name and a build script can rely on it.
+ */
+const ARCHIVE_FILENAME = 'langs.zip';
 
 /**
  * Loads a file's keys with their translations attached.
@@ -147,11 +156,45 @@ async function exportAllLocales(file) {
   return buildAllLocaleDocuments(keys);
 }
 
+/**
+ * Packs every locale into one archive.
+ *
+ * One archive rather than one download per language, because a project with a
+ * dozen locales is a dozen clicks and a dozen chances to miss one. The entry
+ * names are the same locale filenames a single download produces, so unpacking
+ * the archive and downloading each locale by hand give identical trees.
+ *
+ * @param {object} file File model instance.
+ * @returns {Promise<{filename: string, archive: Buffer, entries: string[]}>}
+ * @throws {BadRequestError} When the file has nothing to export yet.
+ */
+async function exportArchive(file) {
+  const keys = await loadTranslationKeys(file.id);
+
+  if (keys.length === 0) {
+    throw new BadRequestError('This file has no translations to download yet.');
+  }
+
+  const documents = buildAllLocaleDocuments(keys);
+  const entries = Object.entries(documents).map(([name, document]) => ({
+    name,
+    content: `${JSON.stringify(document, null, 2)}\n`,
+  }));
+
+  return {
+    filename: ARCHIVE_FILENAME,
+    archive: createZipArchive(entries),
+    entries: entries.map((entry) => entry.name),
+  };
+}
+
 module.exports = {
   getEditorData,
   updateTranslation,
   updateMasterText,
   exportLocale,
   exportAllLocales,
+  exportArchive,
   loadTranslationKeys,
+  ARCHIVE_FILENAME,
 };
