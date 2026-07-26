@@ -8,6 +8,7 @@ const logger = require('../../core/logger');
 const { Account } = require('../../infrastructure/database/models');
 const { sendPasswordResetEmail } = require('../../infrastructure/email/mailer');
 const { ConflictError, UnauthorizedError } = require('../../core/errors');
+const { isReservedIdentifier } = require('../../core/reservedIdentifiers');
 const {
   issueAccessToken,
   issueActionToken,
@@ -53,8 +54,14 @@ async function checkAvailability({ userId, email }) {
   const result = {};
 
   if (userId !== undefined) {
-    const existing = await Account.findOne({ where: { userId }, attributes: ['id'] });
-    result.user_id_available = existing === null;
+    // A reserved identifier is well formed but can never be claimed, so it is
+    // reported the same way a taken one is.
+    if (isReservedIdentifier(userId)) {
+      result.user_id_available = false;
+    } else {
+      const existing = await Account.findOne({ where: { userId }, attributes: ['id'] });
+      result.user_id_available = existing === null;
+    }
   }
 
   if (email !== undefined) {

@@ -134,6 +134,64 @@ describe('authentication', () => {
     });
   });
 
+  /*
+   * A namespace occupies the first segment of a client URL, so an account named
+   * after a path the client already routes would never be reachable. The probe
+   * and the form must agree about that, or the interface offers a name it then
+   * refuses to create.
+   */
+  describe('reserved namespace identifiers', () => {
+    it.each(['api', 'assets', 'login', 'namespaces', 'organizations', 'register', 'settings'])(
+      'refuses to register %s',
+      async (userId) => {
+        const response = await request(app)
+          .post('/api/v1/auth/register')
+          .send({
+            user_id: userId,
+            email: `${userId}@example.test`,
+            password: VALID_PASSWORD,
+            confirm_password: VALID_PASSWORD,
+          })
+          .expect(422);
+
+        expect(response.body.error.details.some((item) => item.field === 'user_id')).toBe(true);
+      },
+    );
+
+    it('reports a reserved identifier as unavailable rather than rejecting the probe', async () => {
+      const response = await request(app)
+        .get('/api/v1/auth/availability')
+        .query({ user_id: 'settings' })
+        .expect(200);
+
+      expect(response.body.data.user_id_available).toBe(false);
+    });
+
+    it('refuses a reserved identifier for an organization', async () => {
+      const account = await registerAccount(app, {
+        user_id: 'org_maker',
+        email: 'org_maker@example.test',
+      });
+
+      await request(app)
+        .post('/api/v1/namespaces/organizations')
+        .set('Authorization', `Bearer ${account.token}`)
+        .send({ user_id: 'namespaces', email: 'reserved_org@example.test' })
+        .expect(422);
+    });
+
+    it('leaves an ordinary identifier alone', async () => {
+      // The list covers real path collisions only, so common names such as
+      // admin stay available.
+      const response = await request(app)
+        .get('/api/v1/auth/availability')
+        .query({ user_id: 'admin' })
+        .expect(200);
+
+      expect(response.body.data.user_id_available).toBe(true);
+    });
+  });
+
   describe('login', () => {
     it('accepts either the user id or the email address', async () => {
       await registerAccount(app, { user_id: 'dual_login', email: 'dual@example.test' });

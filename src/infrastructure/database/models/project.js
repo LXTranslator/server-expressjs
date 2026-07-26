@@ -9,6 +9,11 @@ const { DataTypes } = require('sequelize');
  * organization. Access checks therefore always resolve through the namespace
  * rather than through a direct owner column.
  *
+ * Every project in the system lives in this one table, whoever owns it, so the
+ * sequence behind `id` is shared and a project identifier is unique on its own.
+ * A name only has to be unique within its owning namespace, which is what lets
+ * two accounts each hold a project called `website` without collision.
+ *
  * @param {import('sequelize').Sequelize} sequelize Connection instance.
  * @returns {import('sequelize').ModelStatic<any>} The Project model.
  */
@@ -17,8 +22,8 @@ module.exports = (sequelize) => {
     'Project',
     {
       id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
+        type: DataTypes.INTEGER,
+        autoIncrement: true,
         primaryKey: true,
       },
       namespaceAccountId: {
@@ -59,7 +64,8 @@ module.exports = (sequelize) => {
       tableName: 'projects',
       updatedAt: 'updated_at',
       indexes: [
-        // Project names are unique inside a namespace, not globally.
+        // Unique per namespace and never globally, so the same project name is
+        // free in every other account, user or organization alike.
         { unique: true, fields: ['namespace_account_id', 'name'] },
       ],
     },

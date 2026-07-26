@@ -77,18 +77,47 @@ function assertRole(role, required) {
 }
 
 /**
+ * Reads a project identifier from a request path.
+ *
+ * The column is an integer, so a value that is not one can never match a row.
+ * Rejecting it here rather than passing it to the database matters: PostgreSQL
+ * raises a type error on a malformed integer, which would surface as a 500 and
+ * distinguish a bad identifier from an unauthorised one.
+ *
+ * @param {string|number} value Raw identifier.
+ * @returns {number|null} The identifier, or null when it cannot be one.
+ */
+function parseProjectId(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  // No leading zeros, no sign and no exponent, so one project has one spelling.
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,14}$/.test(value)) {
+    return null;
+  }
+  return Number(value);
+}
+
+/**
  * Loads a project the caller is allowed to see.
  *
  * The project is fetched first and its namespace is then authorised, so a
- * caller cannot reach a project by guessing its identifier.
+ * caller cannot reach a project by guessing its identifier. Identifiers are
+ * sequential and therefore trivially guessable, which changes nothing here:
+ * authorization never depended on them being unpredictable.
  *
  * @param {object} account Authenticated account.
- * @param {string} projectId Project identifier.
+ * @param {string|number} projectId Project identifier.
  * @returns {Promise<{project: object, namespace: object, role: string}>}
  * @throws {NotFoundError} When the project does not exist or is not visible.
  */
 async function resolveProjectAccess(account, projectId) {
-  const project = await Project.findByPk(projectId);
+  const id = parseProjectId(projectId);
+  if (id === null) {
+    throw new NotFoundError('That project does not exist.');
+  }
+
+  const project = await Project.findByPk(id);
   if (project === null) {
     throw new NotFoundError('That project does not exist.');
   }
@@ -147,4 +176,5 @@ module.exports = {
   resolveFileAccess,
   listAccessibleNamespaces,
   assertRole,
+  parseProjectId,
 };

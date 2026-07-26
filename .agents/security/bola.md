@@ -5,9 +5,15 @@ description: Verify ownership of every referenced record on every API call in th
 
 # Broken Object Level Authorization
 
-The silent identifier swap: a caller changes a UUID in a URL and reaches a
-record belonging to somebody else. Every endpoint that accepts an identifier is
-a candidate.
+The silent identifier swap: a caller changes an identifier in a URL and reaches
+a record belonging to somebody else. Every endpoint that accepts an identifier
+is a candidate.
+
+Project identifiers are sequential integers, so a caller can enumerate them
+without guessing. That is not the flaw and never was: authorization here has
+never depended on an identifier being unpredictable, only on resolving
+ownership before returning anything. Treat a guessable identifier as the normal
+case rather than the dangerous one.
 
 ## Rules
 
@@ -46,7 +52,7 @@ a candidate.
 | Identifier | Resolver |
 |---|---|
 | `:namespace` | `resolveNamespaceAccess` |
-| `:projectId` | `resolveProjectAccess` |
+| `:projectId` | `resolveProjectAccess`, which rejects anything that is not a positive integer before it reaches the database |
 | `:fileId` | `resolveFileAccess` |
 | `:keyId` | Scoped by `projectId` in the query |
 | `:translationId` | Scoped by `fileId` through its key |
