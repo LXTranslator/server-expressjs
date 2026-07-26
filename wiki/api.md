@@ -358,6 +358,89 @@ above, and nobody may grant a role above their own.
 Returns **204**. Members may remove themselves; removing anyone else requires
 `ADMIN`. The last `OWNER` cannot be removed or demoted.
 
+### `GET /namespaces/:namespace/export_formats`
+
+The shapes a locale document can be downloaded in. A format belongs to the
+namespace rather than to a project, so one is written once and offered by every
+project underneath it. Any role may read the list, since picking a format is
+part of downloading.
+
+```json
+{
+  "data": {
+    "export_formats": [
+      {
+        "format_id": "default",
+        "name": "Value and hash",
+        "description": "Every leaf carries the translated string and the fingerprint...",
+        "leaf_shape": "OBJECT",
+        "value_field": "value",
+        "hash_field": "hash",
+        "nested": true,
+        "built_in": true,
+        "created_at": null
+      },
+      {
+        "format_id": "key_value",
+        "name": "Key and value",
+        "leaf_shape": "STRING",
+        "value_field": null,
+        "hash_field": null,
+        "nested": true,
+        "built_in": true,
+        "created_at": null
+      }
+    ]
+  }
+}
+```
+
+`default` and `key_value` ship with the application and exist in every
+namespace. They are listed first and cannot be changed or removed: **409** on a
+`PATCH`, a `DELETE`, or a `POST` that reuses one of their identifiers.
+
+### `POST /namespaces/:namespace/export_formats`
+
+Creates a format for the namespace. Requires `ADMIN` or above inside an
+organization.
+
+```json
+{
+  "format_id": "flat_text",
+  "name": "Flat text",
+  "description": "One dotted key per line, no fingerprint.",
+  "leaf_shape": "STRING",
+  "nested": false
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `format_id` | yes | 2 to 50 lowercase letters, digits and underscores. Unique within the namespace and immutable afterwards, since a build script downloads with it. |
+| `name` | yes | Up to 80 characters. |
+| `description` | no | Up to 500 characters. |
+| `leaf_shape` | no | `OBJECT` (default) writes a leaf object; `STRING` writes the translated text itself. |
+| `value_field` | no | Field holding the translation. `OBJECT` only, defaults to `value`. |
+| `hash_field` | no | Field holding the fingerprint. `OBJECT` only, defaults to `hash`. Pass `null` for a leaf with no fingerprint. |
+| `nested` | no | `true` (default) expands `greeting.hello` into a tree; `false` keeps it as one key. |
+
+A format is a description, never a template, so nothing stored here is
+evaluated. Field names must start with a letter and hold only lowercase letters,
+digits and underscores, which is what keeps a name such as `__proto__` out
+(**422**). Naming a field on a `STRING` leaf, or giving the value and the hash
+the same name, is **400**. A namespace may hold 50 formats.
+
+### `PATCH /namespaces/:namespace/export_formats/:formatId`
+
+Any of `name`, `description`, `leaf_shape`, `value_field`, `hash_field`,
+`nested`. The identifier itself cannot change. Requires `ADMIN` or above inside
+an organization.
+
+### `DELETE /namespaces/:namespace/export_formats/:formatId`
+
+Returns **204**. Requires `ADMIN` or above inside an organization. Downloads
+naming a removed format become **404**.
+
 ### `GET /namespaces/:namespace/projects`
 
 Lists the namespace's projects.
@@ -611,6 +694,13 @@ Marks the row `is_manual`, so a later pipeline run leaves it alone.
 Editing the master restamps its fingerprint, which is exactly how every derived
 translation becomes visibly stale.
 
+### `GET /files/:fileId/export_formats`
+
+The formats this file can be downloaded in, taken from the namespace that owns
+its project. Identical to
+`GET /namespaces/:namespace/export_formats`, offered here so the download screen
+does not have to resolve the namespace first.
+
 ### `GET /files/:fileId/download`
 
 | Query | Result |
@@ -618,10 +708,25 @@ translation becomes visibly stale.
 | none | Every locale in one JSON envelope, for the editor. |
 | `lang=th_th` | That locale as a JSON attachment. |
 | `format=zip` | Every locale in one archive, always named `langs.zip`. |
+| `export_format=key_value` | Written in that format. Defaults to `default`. |
+
+`format` and `export_format` answer different questions. `format` is how the
+download is packaged; `export_format` is the shape of the documents inside it.
+Either can change without the other, and `export_format` applies to all three
+packagings.
 
 `format=zip` returns `application/zip` with one entry per locale, named exactly
 as the single locale download names it, so unpacking the archive and downloading
-each language by hand produce identical trees. Any other `format` is **422**.
+each language by hand produce identical trees. The archive is named `langs.zip`
+whichever format its documents are written in. Any other `format` is **422**.
+
+`export_format` must name a format the owning namespace offers, otherwise
+**404**; a malformed identifier is **422**. With `export_format=key_value`, the
+same locale comes back ready to use as it is:
+
+```json
+{ "greeting": { "hello": "สวัสดี {name}" } }
+```
 
 Without `?lang=`, returns every locale in one envelope:
 
