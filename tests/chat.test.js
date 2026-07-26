@@ -8,7 +8,11 @@ const {
   createProject,
   waitForFile,
 } = require('./helpers/testApp');
-const { AiChatLog, AccountApiKey } = require('../src/infrastructure/database/models');
+const {
+  AiChatLog,
+  AiChatSession,
+  AccountApiKey,
+} = require('../src/infrastructure/database/models');
 const chatLogService = require('../src/modules/chat/chatLog.service');
 const { dispatchTool, listToolDefinitions } = require('../src/modules/chat/chat.tools');
 const embeddingService = require('../src/modules/chat/embedding.service');
@@ -660,9 +664,17 @@ describe('the assistant', () => {
         return original.apply(AiChatLog, args);
       });
 
+      // A turn belongs to a conversation, so one is opened for it. Recording
+      // into an identifier that names nothing would fail on every retry and jam
+      // the buffer, which is not the failure this test is about.
+      const conversation = await AiChatSession.create({
+        accountId: account.id,
+        userAccountId: account.id,
+      });
+
       try {
         const { flushed } = chatLogService.record({
-          sessionId: chatLogService.newSessionId(),
+          sessionId: conversation.id,
           accountId: account.id,
           userAccountId: account.id,
           userPrompt: 'Survive a failure',
@@ -697,6 +709,185 @@ describe('the assistant', () => {
     });
   });
 
+  describe('conversations', () => {
+    /*
+     * A conversation is a record, so it can be named, listed and deleted. The
+     * properties worth proving are that it starts named without anybody naming
+     * it, that a chosen name is never overwritten by a later turn, and that the
+     * list is the caller's own and nobody else's.
+     */
+
+    /**
+     * Lists the caller's conversations.
+     *
+     * @param {string} [as] Session token.
+     * @param {string} [space] Namespace handle.
+     * @returns {Promise<Array<object>>} Sessions, most recent first.
+     */
+    async function listSessions(as = token, space = namespace) {
+      const response = await request(app)
+        .get(`/api/v1/namespaces/${space}/chat/sessions`)
+        .set('Authorization', `Bearer ${as}`)
+        .expect(200);
+      return response.body.data.sessions;
+    }
+
+    it('names a new conversation after the question that opened it', async () => {
+      const response = await say({ message: 'How do I add Thai to every project' })
+        .expect(200);
+
+      expect(response.body.data.session.title).toBe('How do I add Thai to every project');
+      expect(response.body.data.session.turn_count).toBe(1);
+    });
+
+    it('shortens a long opening question at a word boundary', async () => {
+      const long =
+        'I would like to understand exactly how the translation pipeline decides ' +
+        'which locale becomes the master document';
+
+      const response = await say({ message: long }).expect(200);
+      const { title } = response.body.data.session;
+
+      expect(title.length).toBeLessThanOrEqual(61);
+      expect(title.endsWith('\u2026')).toBe(true);
+      // Cut between words, never through one.
+      expect(long.startsWith(title.slice(0, -1))).toBe(true);
+    });
+
+    it('keeps the name it was given rather than the question it was asked', async () => {
+      const started = await say({ message: 'First question' }).expect(200);
+      const sessionId = started.body.data.session_id;
+
+      const renamed = await request(app)
+        .patch(`/api/v1/namespaces/${namespace}/chat/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Thai rollout' })
+        .expect(200);
+
+      expect(renamed.body.data.session.title).toBe('Thai rollout');
+
+      await say({ message: 'A second question entirely', session_id: sessionId }).expect(200);
+
+      const after = await request(app)
+        .get(`/api/v1/namespaces/${namespace}/chat/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(after.body.data.session.title).toBe('Thai rollout');
+      expect(after.body.data.session.turn_count).toBe(2);
+    });
+
+    it('clears the name when the title is emptied', async () => {
+      const started = await say({ message: 'Nameless' }).expect(200);
+      const sessionId = started.body.data.session_id;
+
+      const cleared = await request(app)
+        .patch(`/api/v1/namespaces/${namespace}/chat/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: '   ' })
+        .expect(200);
+
+      expect(cleared.body.data.session.title).toBeNull();
+    });
+
+    it('refuses a name longer than the column holds', async () => {
+      const started = await say({ message: 'Too long a name' }).expect(200);
+
+      await request(app)
+        .patch(`/api/v1/namespaces/${namespace}/chat/sessions/${started.body.data.session_id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'x'.repeat(121) })
+        .expect(422);
+    });
+
+    it('lists the most recently used conversation first', async () => {
+      const older = await say({ message: 'An older thread' }).expect(200);
+      const newer = await say({ message: 'A newer thread' }).expect(200);
+
+      const listed = await listSessions();
+      const ids = listed.map((entry) => entry.id);
+
+      expect(ids.indexOf(newer.body.data.session_id)).toBeLessThan(
+        ids.indexOf(older.body.data.session_id),
+      );
+
+      // Speaking to the older one again moves it back to the top.
+      await say({ message: 'Back to this one', session_id: older.body.data.session_id })
+        .expect(200);
+
+      const reordered = await listSessions();
+      expect(reordered[0].id).toBe(older.body.data.session_id);
+    });
+
+    it('lists nobody else conversations', async () => {
+      const outsider = await registerAccount(app, {
+        user_id: 'chat_lister',
+        email: 'chat_lister@example.test',
+      });
+
+      const mine = await listSessions();
+      const theirs = await listSessions(outsider.token, outsider.account.user_id);
+
+      expect(mine.length).toBeGreaterThan(0);
+      expect(theirs).toEqual([]);
+    });
+
+    it('refuses to rename a conversation that is not the caller own', async () => {
+      const started = await say({ message: 'Mine alone' }).expect(200);
+      const outsider = await registerAccount(app, {
+        user_id: 'chat_renamer',
+        email: 'chat_renamer@example.test',
+      });
+
+      await request(app)
+        .patch(
+          `/api/v1/namespaces/${outsider.account.user_id}/chat/sessions/${started.body.data.session_id}`,
+        )
+        .set('Authorization', `Bearer ${outsider.token}`)
+        .send({ title: 'Not yours' })
+        .expect(404);
+    });
+
+    it('deletes a conversation and every turn in it', async () => {
+      const started = await say({ message: 'Delete me' }).expect(200);
+      const sessionId = started.body.data.session_id;
+      await say({ message: 'And this too', session_id: sessionId }).expect(200);
+      await waitForLogs();
+
+      expect(await AiChatLog.count({ where: { sessionId } })).toBe(2);
+
+      await request(app)
+        .delete(`/api/v1/namespaces/${namespace}/chat/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      expect(await AiChatSession.count({ where: { id: sessionId } })).toBe(0);
+      expect(await AiChatLog.count({ where: { sessionId } })).toBe(0);
+
+      await request(app)
+        .get(`/api/v1/namespaces/${namespace}/chat/sessions/${sessionId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('refuses to delete a conversation that is not the caller own', async () => {
+      const started = await say({ message: 'Still mine' }).expect(200);
+      const outsider = await registerAccount(app, {
+        user_id: 'chat_deleter',
+        email: 'chat_deleter@example.test',
+      });
+
+      await request(app)
+        .delete(
+          `/api/v1/namespaces/${outsider.account.user_id}/chat/sessions/${started.body.data.session_id}`,
+        )
+        .set('Authorization', `Bearer ${outsider.token}`)
+        .expect(404);
+
+      expect(await AiChatSession.count({ where: { id: started.body.data.session_id } })).toBe(1);
+    });
+  });
+
   describe('history and search', () => {
     let session;
 
@@ -724,12 +915,36 @@ describe('the assistant', () => {
         email: 'chat_snooper@example.test',
       });
 
-      const response = await request(app)
+      // 404, not an empty conversation. A conversation belongs to a namespace
+      // and a person, so an identifier held from elsewhere resolves to nothing
+      // rather than to a session that looks merely new.
+      await request(app)
         .get(`/api/v1/namespaces/${outsider.account.user_id}/chat/sessions/${session}`)
         .set('Authorization', `Bearer ${outsider.token}`)
+        .expect(404);
+    });
+
+    it('refuses to write a turn into another account conversation', async () => {
+      // The stronger half of the same property. Before a conversation was a
+      // record, posting somebody else's identifier wrote a turn under it,
+      // interleaving two people's history under one session.
+      const outsider = await registerAccount(app, {
+        user_id: 'chat_intruder',
+        email: 'chat_intruder@example.test',
+      });
+
+      await request(app)
+        .post(`/api/v1/namespaces/${outsider.account.user_id}/chat/`)
+        .set('Authorization', `Bearer ${outsider.token}`)
+        .send({ message: 'Continuing your conversation', session_id: session })
+        .expect(404);
+
+      const response = await request(app)
+        .get(`/api/v1/namespaces/${namespace}/chat/sessions/${session}`)
+        .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(response.body.data.turn_count).toBe(0);
+      expect(response.body.data.turn_count).toBe(2);
     });
 
     it('finds a past exchange by text when no embedding model is configured', async () => {
@@ -927,12 +1142,16 @@ describe('the assistant', () => {
   async function context() {
     const { Account } = require('../src/infrastructure/database/models');
     const live = await Account.findByPk(account.id);
+    const conversation = await AiChatSession.create({
+      accountId: live.id,
+      userAccountId: live.id,
+    });
     return {
       actor: live,
       namespace: live,
       namespaceRole: 'OWNER',
       attachment: null,
-      sessionId: chatLogService.newSessionId(),
+      sessionId: conversation.id,
     };
   }
 });

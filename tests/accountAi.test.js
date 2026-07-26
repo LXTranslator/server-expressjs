@@ -12,6 +12,7 @@ const {
   Account,
   AccountApiKey,
   AiChatLog,
+  AiChatSession,
 } = require('../src/infrastructure/database/models');
 const accountKeyService = require('../src/modules/accountKeys/accountKey.service');
 const { runWithKeyFallback } = require('../src/infrastructure/ai/keyFallback');
@@ -532,7 +533,28 @@ describe('account AI configuration', () => {
   });
 
   describe('the chat log', () => {
+    /**
+     * Opens a conversation for a turn to belong to.
+     *
+     * A log row names a session, and a session is a record now, so a turn
+     * cannot be written into an identifier that belongs to nothing.
+     *
+     * @param {string} id Session identifier.
+     * @param {string} accountId Namespace the conversation happened in.
+     * @param {string} userAccountId The person whose conversation it is.
+     * @returns {Promise<object>} The session row.
+     */
+    async function openSession(id, accountId, userAccountId) {
+      return AiChatSession.create({ id, accountId, userAccountId });
+    }
+
     it('keeps the acting person even when the organization paid', async () => {
+      await openSession(
+        '22222222-2222-4222-8222-222222222222',
+        orgAccount.id,
+        memberAccount.id,
+      );
+
       const log = await AiChatLog.create({
         sessionId: '22222222-2222-4222-8222-222222222222',
         accountId: orgAccount.id,
@@ -550,6 +572,12 @@ describe('account AI configuration', () => {
     });
 
     it('numbers rows in insertion order, which is how a session is replayed', async () => {
+      await openSession(
+        '33333333-3333-4333-8333-333333333333',
+        memberAccount.id,
+        memberAccount.id,
+      );
+
       const first = await AiChatLog.create({
         sessionId: '33333333-3333-4333-8333-333333333333',
         accountId: memberAccount.id,
@@ -575,6 +603,12 @@ describe('account AI configuration', () => {
     });
 
     it('accepts a row with no embedding, so an unconfigured account still chats', async () => {
+      await openSession(
+        '44444444-4444-4444-8444-444444444444',
+        memberAccount.id,
+        memberAccount.id,
+      );
+
       const log = await AiChatLog.create({
         sessionId: '44444444-4444-4444-8444-444444444444',
         accountId: memberAccount.id,
@@ -589,6 +623,12 @@ describe('account AI configuration', () => {
     });
 
     it('leaves the vector out of the client representation', async () => {
+      await openSession(
+        '55555555-5555-4555-8555-555555555555',
+        memberAccount.id,
+        memberAccount.id,
+      );
+
       const log = await AiChatLog.create({
         sessionId: '55555555-5555-4555-8555-555555555555',
         accountId: memberAccount.id,
@@ -609,6 +649,12 @@ describe('account AI configuration', () => {
         email: 'ai_doomed@example.test',
       });
 
+      await openSession(
+        '66666666-6666-4666-8666-666666666666',
+        doomed.account.id,
+        doomed.account.id,
+      );
+
       await AiChatLog.create({
         sessionId: '66666666-6666-4666-8666-666666666666',
         accountId: doomed.account.id,
@@ -620,6 +666,7 @@ describe('account AI configuration', () => {
       await Account.destroy({ where: { id: doomed.account.id } });
 
       expect(await AiChatLog.count({ where: { accountId: doomed.account.id } })).toBe(0);
+      expect(await AiChatSession.count({ where: { accountId: doomed.account.id } })).toBe(0);
     });
   });
 });

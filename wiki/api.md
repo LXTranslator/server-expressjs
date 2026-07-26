@@ -585,13 +585,20 @@ The attachment passes exactly the checks an ordinary upload passes.
 | Field | Required | Notes |
 |---|---|---|
 | `message` | yes | Up to `AGENTS_CHAT_MAX_PROMPT` characters. |
-| `session_id` | no | Continues that conversation. Absent starts a new one. |
+| `session_id` | no | Continues that conversation, which must be one of the caller's own. Absent starts a new one. |
 | `file` | no | Multipart only. A `.json` locale file, same limits as an upload. |
 
 ```json
 {
   "data": {
     "session_id": "...",
+    "session": {
+      "id": "...",
+      "title": "Which languages does the web app project have?",
+      "turn_count": 4,
+      "total_token_usage": 3140,
+      "last_message_at": "2026-07-26T19:00:00.000Z"
+    },
     "answer": "The web app project has th_th and ja_jp.",
     "namespace": "acme_corp",
     "tool_calls": [{ "name": "check_project_languages", "ok": true }],
@@ -607,8 +614,15 @@ The attachment passes exactly the checks an ordinary upload passes.
 not fail the request: it appears in `tool_calls` with `ok: false` and an
 `error`, and the assistant explains it in the answer.
 
+**404** when `session_id` names a conversation that is not the caller's own,
+which is checked before anything is spent.
+
 **503** when no credential in the namespace chain can answer. See
 *Account AI credentials* for how that chain is assembled.
+
+A new conversation is named from the question that opened it, cut at a word
+boundary, so a list is readable without anybody naming anything. Renaming
+replaces that, and nothing rewrites a chosen name afterwards.
 
 ### Tools the assistant may call
 
@@ -644,17 +658,63 @@ project to get a file into it.
 `add_languages` touches at most 25 projects per call. Files that cannot take a
 language are reported in `skipped` with a reason rather than failing the rest.
 
+### `GET /namespaces/:namespace/chat/sessions`
+
+Lists the caller's conversations in this namespace, most recently used first.
+
+| Query | Required | Notes |
+|---|---|---|
+| `limit` | no | At most 100. Defaults to 50. |
+
+```json
+{
+  "data": {
+    "sessions": [
+      {
+        "id": "...",
+        "title": "Thai rollout",
+        "turn_count": 6,
+        "total_token_usage": 4820,
+        "last_message_at": "2026-07-26T19:00:00.000Z",
+        "created_at": "2026-07-26T18:12:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+The caller's own and nobody else's, including inside an organization. An
+administrator manages the credentials that pay for the assistant, which is not
+the same as reading what a colleague asked it.
+
+`last_message_at` is separate from `updated_at` on purpose: renaming a
+conversation must not reorder the list.
+
 ### `GET /namespaces/:namespace/chat/sessions/:sessionId`
 
-Reads a conversation back, most recent turns first written oldest first.
+Reads a conversation back, oldest turn first, alongside the conversation record.
 
 | Query | Required | Notes |
 |---|---|---|
 | `limit` | no | Turns to read. Defaults to `AGENTS_CHAT_HISTORY_TURNS`. |
 
 Always the caller's own conversation. A session identifier belonging to somebody
-else returns an empty history rather than a 403, since a 403 would confirm it
-exists.
+else is **404**, not 403, since a 403 would confirm it exists.
+
+### `PATCH /namespaces/:namespace/chat/sessions/:sessionId`
+
+```json
+{ "title": "Thai rollout" }
+```
+
+Names a conversation. At most 120 characters. An empty or blank title clears the
+name, putting the conversation back to being listed by its opening question.
+**404** when it is not the caller's own.
+
+### `DELETE /namespaces/:namespace/chat/sessions/:sessionId`
+
+Returns **204**. Cascades to every turn in the conversation. **404** when it is
+not the caller's own.
 
 ### `GET /namespaces/:namespace/chat/search`
 

@@ -1,12 +1,16 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const config = require('../../config');
 const logger = require('../../core/logger');
 const { AiChatLog } = require('../../infrastructure/database/models');
 
 /**
  * Assistant conversation logging.
+ *
+ * One row per turn, hanging off the conversation it belongs to. The identifier
+ * is minted by `chatSession.service.js` when the conversation is opened, not
+ * here: a turn is written into a conversation that already exists, which is
+ * what makes a session something that can be named, listed and owned.
  *
  * Two requirements shape this module, and they pull the same way.
  *
@@ -208,15 +212,6 @@ function nextTotal(sessionId, storedTotal, turnUsage) {
 }
 
 /**
- * Mints a session identifier.
- *
- * @returns {string} A new session identifier.
- */
-function newSessionId() {
-  return crypto.randomUUID();
-}
-
-/**
  * Empties the buffer without writing, for test isolation only.
  *
  * @returns {void}
@@ -234,7 +229,6 @@ module.exports = {
   flush,
   readSessionWindow,
   nextTotal,
-  newSessionId,
   getBufferState,
   resetBuffer,
 };

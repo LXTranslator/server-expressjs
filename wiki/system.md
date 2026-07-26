@@ -49,7 +49,7 @@ accounts ──┬─< org_members >── accounts          (organization membe
 accounts ──< auth_tokens                          (single use short lived tokens)
 accounts ──< export_formats                       (download shapes, shared by every project)
 accounts ──< account_api_keys                     (encrypted, priority ordered, per namespace)
-accounts ──< ai_chat_logs                         (one row per assistant exchange)
+accounts ──< ai_chat_sessions ──< ai_chat_logs     (a conversation and its turns)
 ```
 
 Credentials hang off `accounts` and nowhere else. A project names a platform and
@@ -73,7 +73,8 @@ left behind.
 | `auth_tokens` | Ledger making short lived tokens genuinely single use. Stores a SHA-256 digest, never the token. |
 | `export_formats` | Unique on `(namespace_account_id, format_id)`. Describes the shape of a downloaded locale document as data, never as a template: a leaf shape, the field names to emit, and whether dotted paths expand into a tree. Hangs off the namespace so one shape serves every project underneath. |
 | `account_api_keys` | The only table holding a provider credential, for translation and for the assistant alike. `api_key` holds an AES 256 GCM envelope, excluded from every default query by a Sequelize scope so reading it requires asking for it by name. Each row names its own platform and chat model, so one account can hold keys for several vendors at once and a project draws on the ones matching its platform. Priority ordered, giving the fallback chain its order. |
-| `ai_chat_logs` | One row per assistant exchange. `account_id` is the namespace the conversation happened in and whose credentials paid; `user_id` is the person who asked, and holds an account id rather than the routing handle `accounts.user_id` carries. `embedding` is nullable text holding a JSON array, so an account with no embedding model configured still chats normally. |
+| `ai_chat_sessions` | One row per conversation. Owned by a namespace and a person, which is what makes continuing one a permission check rather than a matter of holding the right UUID. `title` is nullable and derived from the opening question until somebody renames it; a chosen name is never rewritten. `turn_count` and `total_token_usage` are denormalised from the turns so a conversation list is not an aggregate over the largest table in the schema. `last_message_at` is separate from `updated_at` so renaming does not reorder the list. |
+| `ai_chat_logs` | One row per assistant exchange, belonging to a session. `account_id` is the namespace the conversation happened in and whose credentials paid; `user_id` is the person who asked, and holds an account id rather than the routing handle `accounts.user_id` carries. `embedding` is nullable text holding a JSON array, so an account with no embedding model configured still chats normally. |
 
 ## The translation pipeline
 
@@ -276,6 +277,26 @@ turn. See `.agents/security/excessive-agency.md`.
 Tool arguments are written by the model, so they are validated by a strict
 schema before a service sees them, exactly like a request body. A refusal comes
 back as a result the assistant can explain, not as an exception.
+
+### Conversations
+
+A conversation is a row in `ai_chat_sessions`, not a UUID passed around, and
+that buys two things.
+
+It can be **named**. A new one takes its title from the question that opened it,
+cut at a word boundary, so a list of conversations reads without anybody having
+named anything. Renaming replaces that, and once renamed nothing rewrites it: a
+name somebody chose outranks a sentence they happened to type first.
+
+It can be **owned**. Continuing a conversation is a lookup filtered by both the
+namespace and the person, so a session identifier picked up elsewhere resolves
+to nothing. Before this, posting somebody else's identifier wrote a turn under
+it, quietly interleaving two people's history under one session; now it is a
+404, checked before a provider call is paid for.
+
+The list is the caller's own inside an organization too. An administrator
+manages the credentials that pay for the assistant, which is not the same thing
+as reading what a colleague asked it.
 
 ### Where it runs
 
