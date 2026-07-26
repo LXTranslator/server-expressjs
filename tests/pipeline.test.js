@@ -205,27 +205,37 @@ describe('translation pipeline', () => {
   });
 
   it('records a failure on the file when every key is rejected', async () => {
-    const failingProject = await createProject(app, token, namespace, {
+    // Its own account, because the credentials below are deliberately broken
+    // and the chain that reads them belongs to the account, not the project.
+    // Poisoning the namespace this file's other tests translate through would
+    // fail them instead of this one.
+    const failing = await registerAccount(app, {
+      user_id: 'pipeline_failing_user',
+      email: 'pipeline_failing@example.test',
+    });
+    const failingProject = await createProject(app, failing.token, failing.account.user_id, {
       name: 'failing_project',
     });
 
     // Both credentials are failure fixtures, so the fallback chain runs out.
+    // Storing any key at all is what keeps the built in development key from
+    // standing in and quietly succeeding.
     for (const key of ['mock_key_invalid', 'mock_key_quota_exceeded']) {
       await request(app)
-        .post(`/api/v1/projects/${failingProject.id}/keys`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ api_key: key, label: key })
+        .post(`/api/v1/namespaces/${failing.account.user_id}/settings/ai_keys`)
+        .set('Authorization', `Bearer ${failing.token}`)
+        .send({ provider: 'mock', api_key: key, label: key })
         .expect(201);
     }
 
     const response = await request(app)
       .post(`/api/v1/projects/${failingProject.id}/files`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${failing.token}`)
       .field('target_langs', 'th_th')
       .attach('file', Buffer.from(JSON.stringify({ a: 'A' })), 'en_us.json')
       .expect(202);
 
-    const file = await waitForFile(app, token, response.body.data.file.id);
+    const file = await waitForFile(app, failing.token, response.body.data.file.id);
 
     expect(file.status).toBe('FAILED');
     expect(file.error_message).toMatch(/API key/i);

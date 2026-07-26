@@ -5,16 +5,20 @@ const { DataTypes } = require('sequelize');
 /**
  * Defines the `account_api_keys` model.
  *
- * The mirror of `project_api_keys`, one level up. A project's credentials pay
- * for that project's translation pipeline; these pay for whatever an account
- * does outside a single project, which today means the assistant.
+ * The only place a provider credential is stored. Every call this application
+ * makes to a vendor, whether it is translating a file inside a project or
+ * answering a question in the assistant, is paid for by a row in this table.
  *
- * The differences from the project table are deliberate. A project already
- * records its provider and model, so its credential rows carry only the secret.
- * An account has no such record, so each row here names its own platform and
- * model. That is also what makes the fallback chain useful across vendors: an
- * organization can put its OpenRouter credential first and a member's personal
- * OpenAI credential behind it, and a failure over one moves to the other.
+ * Credentials sit on an account rather than on a project because a credential
+ * is a billing relationship, and billing belongs to whoever owns the account.
+ * A project names a platform and a model and nothing more; the key that pays
+ * for them is looked up here, narrowed to that platform, when the call is about
+ * to be made.
+ *
+ * Each row names its own platform and chat model, which is what makes the
+ * fallback chain useful across vendors: an organization can put its OpenRouter
+ * credential first and a member's personal OpenAI credential behind it, and a
+ * failure over one moves to the other.
  *
  * `api_key` never holds a plaintext credential. The service layer encrypts the
  * value with AES-256-GCM before it is written, and `last_four` exists purely so

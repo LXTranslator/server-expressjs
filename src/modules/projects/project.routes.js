@@ -15,7 +15,7 @@ const fileSchemas = require('../files/file.schemas');
 const router = express.Router();
 
 /**
- * Project routes, including credential management and file upload.
+ * Project routes: settings, description and file upload.
  *
  * As in the namespace router, access is resolved once for every `:projectId`
  * path so no handler repeats a permission check.
@@ -119,59 +119,12 @@ router.delete(
 );
 
 /*
- * Credential management.
+ * A project holds no credentials.
  *
- * Every response here is masked. No endpoint in this file, at any role, returns
- * a decrypted key.
+ * It names a platform and a model, and the credential that pays for them comes
+ * from the namespace that owns it, falling back to the personal keys of whoever
+ * asked. `/namespaces/:namespace/settings/ai_keys` is where those live.
  */
-
-router.get(
-  '/:projectId/keys',
-  requireProjectAdmin,
-  asyncHandler(async (req, res) => {
-    const keys = await projectService.listApiKeys(req.project.id);
-    res.json({ data: { keys } });
-  }),
-);
-
-router.post(
-  '/:projectId/keys',
-  requireProjectAdmin,
-  validate(schemas.addApiKeySchema),
-  asyncHandler(async (req, res) => {
-    const key = await projectService.addApiKey(req.project.id, req.body);
-    res.status(201).json({ data: { key } });
-  }),
-);
-
-router.post(
-  '/:projectId/keys/reorder',
-  requireProjectAdmin,
-  validate(schemas.reorderApiKeysSchema),
-  asyncHandler(async (req, res) => {
-    const keys = await projectService.reorderApiKeys(req.project.id, req.body.ordered_key_ids);
-    res.json({ data: { keys } });
-  }),
-);
-
-router.patch(
-  '/:projectId/keys/:keyId',
-  requireProjectAdmin,
-  validate(schemas.updateApiKeySchema),
-  asyncHandler(async (req, res) => {
-    const key = await projectService.updateApiKey(req.project.id, req.params.keyId, req.body);
-    res.json({ data: { key } });
-  }),
-);
-
-router.delete(
-  '/:projectId/keys/:keyId',
-  requireProjectAdmin,
-  asyncHandler(async (req, res) => {
-    await projectService.removeApiKey(req.project.id, req.params.keyId);
-    res.status(204).send();
-  }),
-);
 
 /* Files. */
 
@@ -193,6 +146,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const { file } = await fileService.createUpload({
       project: req.project,
+      namespace: req.namespace,
+      actor: req.account,
       file: req.file,
       sourceLang: req.body.source_lang,
       targetLangs: req.body.target_langs,

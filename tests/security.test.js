@@ -377,9 +377,15 @@ describe('upload endpoint hardening', () => {
 });
 
 describe('credential exposure', () => {
+  /*
+   * Credentials live on an account, never on a project. These are the
+   * properties that hold wherever the row came from: nothing readable leaves
+   * the process, the column is ciphertext, and an ordinary query does not carry
+   * it at all.
+   */
   let app;
   let token;
-  let project;
+  let namespace;
 
   beforeAll(async () => {
     app = sharedApp;
@@ -388,23 +394,23 @@ describe('credential exposure', () => {
       email: 'keys@example.test',
     });
     token = registered.token;
-    project = await createProject(app, token, 'keys_user');
+    namespace = registered.account.user_id;
   });
 
   it('never returns a stored key in any response', async () => {
     const secret = 'sk_live_supersecret_value_9876';
 
     const created = await request(app)
-      .post(`/api/v1/projects/${project.id}/keys`)
+      .post(`/api/v1/namespaces/${namespace}/settings/ai_keys`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ api_key: secret, label: 'primary' })
+      .send({ provider: 'mock', api_key: secret, label: 'primary' })
       .expect(201);
 
     expect(JSON.stringify(created.body)).not.toContain(secret);
     expect(created.body.data.key.masked_key).toBe('****9876');
 
     const listed = await request(app)
-      .get(`/api/v1/projects/${project.id}/keys`)
+      .get(`/api/v1/namespaces/${namespace}/settings/ai_keys`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
@@ -414,16 +420,14 @@ describe('credential exposure', () => {
   it('stores the key encrypted rather than in the clear', async () => {
     const secret = 'sk_live_another_secret_5432';
 
-    await request(app)
-      .post(`/api/v1/projects/${project.id}/keys`)
+    const created = await request(app)
+      .post(`/api/v1/namespaces/${namespace}/settings/ai_keys`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ api_key: secret })
+      .send({ provider: 'mock', api_key: secret })
       .expect(201);
 
-    const { ProjectApiKey } = require('../src/infrastructure/database/models');
-    const row = await ProjectApiKey.scope('withSecret').findOne({
-      where: { projectId: project.id, lastFour: '5432' },
-    });
+    const { AccountApiKey } = require('../src/infrastructure/database/models');
+    const row = await AccountApiKey.scope('withSecret').findByPk(created.body.data.key.id);
 
     expect(row.apiKey).not.toContain(secret);
     expect(row.apiKey.startsWith('v1:')).toBe(true);
@@ -433,9 +437,9 @@ describe('credential exposure', () => {
   it('leaves the encrypted column out of a query that does not ask for it', async () => {
     // The scope is the defence that makes a generic findAll safe by default,
     // and it only works if it names the attribute rather than the column.
-    const { ProjectApiKey } = require('../src/infrastructure/database/models');
+    const { AccountApiKey } = require('../src/infrastructure/database/models');
 
-    const row = await ProjectApiKey.findOne({ where: { projectId: project.id } });
+    const row = await AccountApiKey.findOne();
 
     expect(row.apiKey).toBeUndefined();
     expect(Object.keys(row.toJSON())).not.toContain('apiKey');
@@ -443,19 +447,24 @@ describe('credential exposure', () => {
   });
 
   it('keeps priority order for the fallback chain', async () => {
-    const fresh = await createProject(app, token, 'keys_user', { name: 'ordered_project' });
+    const registered = await registerAccount(app, {
+      user_id: 'ordered_keys_user',
+      email: 'ordered_keys@example.test',
+    });
+    const owner = registered.account.user_id;
+    const ownerToken = registered.token;
 
     for (const label of ['first', 'second', 'third']) {
       await request(app)
-        .post(`/api/v1/projects/${fresh.id}/keys`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ api_key: `sk_${label}_000`, label })
+        .post(`/api/v1/namespaces/${owner}/settings/ai_keys`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ provider: 'mock', api_key: `sk_${label}_000`, label })
         .expect(201);
     }
 
     const listed = await request(app)
-      .get(`/api/v1/projects/${fresh.id}/keys`)
-      .set('Authorization', `Bearer ${token}`)
+      .get(`/api/v1/namespaces/${owner}/settings/ai_keys`)
+      .set('Authorization', `Bearer ${ownerToken}`)
       .expect(200);
 
     expect(listed.body.data.keys.map((key) => key.priority_order)).toEqual([1, 2, 3]);
@@ -463,8 +472,8 @@ describe('credential exposure', () => {
     // Reordering rewrites the chain the worker will walk.
     const reversed = [...listed.body.data.keys].reverse().map((key) => key.id);
     const reordered = await request(app)
-      .post(`/api/v1/projects/${fresh.id}/keys/reorder`)
-      .set('Authorization', `Bearer ${token}`)
+      .post(`/api/v1/namespaces/${owner}/settings/ai_keys/reorder`)
+      .set('Authorization', `Bearer ${ownerToken}`)
       .send({ ordered_key_ids: reversed })
       .expect(200);
 

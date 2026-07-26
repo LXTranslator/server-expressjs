@@ -273,6 +273,8 @@ const TOOLS = [
       try {
         const { file } = await fileService.createUpload({
           project: await projectService.findProjectInstance(project.id),
+          namespace: context.namespace,
+          actor: context.actor,
           file: context.attachment,
           sourceLang: args.source_lang,
           targetLangs,
@@ -352,6 +354,8 @@ const TOOLS = [
       try {
         const { file } = await fileService.createUpload({
           project: access.project,
+          namespace: access.namespace,
+          actor: context.actor,
           file: context.attachment,
           sourceLang: args.source_lang,
           targetLangs: args.target_langs,
@@ -621,6 +625,8 @@ const TOOLS = [
             const { added } = await fileService.addTargetLanguages({
               file,
               project: access.project,
+              namespace: access.namespace,
+              actor: context.actor,
               targetLangs: args.target_langs,
             });
             applied.push({

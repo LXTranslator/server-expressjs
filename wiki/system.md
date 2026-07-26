@@ -44,15 +44,17 @@ accidentally use a weaker rule.
 ```
 accounts ──┬─< org_members >── accounts          (organization membership)
            │
-           └─< projects ──┬─< project_api_keys   (encrypted, priority ordered)
-                          │
-                          └─< files ──< translation_keys ──< translations
+           └─< projects ──< files ──< translation_keys ──< translations
 
 accounts ──< auth_tokens                          (single use short lived tokens)
 accounts ──< export_formats                       (download shapes, shared by every project)
 accounts ──< account_api_keys                     (encrypted, priority ordered, per namespace)
 accounts ──< ai_chat_logs                         (one row per assistant exchange)
 ```
+
+Credentials hang off `accounts` and nowhere else. A project names a platform and
+a model; the key that pays for it comes from the namespace that owns the project,
+then from the personal keys of whoever asked.
 
 Every child relation cascades on delete, so removing a namespace removes its
 projects, files, keys and translations with it. No orphaned customer data is
@@ -65,13 +67,12 @@ left behind.
 | `accounts` | Each row is a namespace. An ORG row carries the organization's own `email`, used for billing and account notices, so those never depend on the personal address of whoever created it. `user_id` is the routing handle. The schema calls the credential column `password (Hash)`; it is named `password_hash` here so no reader can mistake it for plaintext. Also carries lockout state. |
 | `org_members` | Unique on `(org_account_id, user_account_id)`. Roles are `OWNER`, `ADMIN`, `MEMBER`. |
 | `projects` | Unique on `(namespace_account_id, name)`, so names are unique per namespace rather than globally: two accounts may each hold a project called `website`. `id` is an autoincrementing integer drawn from this one table, whoever owns the row, so a project identifier is unique on its own and needs no namespace to disambiguate it. |
-| `project_api_keys` | `api_key` holds an AES 256 GCM envelope. Excluded from every default query by a Sequelize scope, so reading it requires asking for it by name. |
 | `files` | Carries processing status, the requested target locales and any failure message. |
 | `translation_keys` | `original_text` is always the English master. `text_hash` is its 36 character fingerprint. `source_text` retains the upload when it was not English. |
 | `translations` | Unique on `(translation_key_id, lang_code)`. `source_hash` records the fingerprint at translation time, which is how staleness is detected. `is_manual` protects human edits from a rerun. |
 | `auth_tokens` | Ledger making short lived tokens genuinely single use. Stores a SHA-256 digest, never the token. |
 | `export_formats` | Unique on `(namespace_account_id, format_id)`. Describes the shape of a downloaded locale document as data, never as a template: a leaf shape, the field names to emit, and whether dotted paths expand into a tree. Hangs off the namespace so one shape serves every project underneath. |
-| `account_api_keys` | The mirror of `project_api_keys` one level up, paying for what an account does outside a single project. Each row names its own platform and chat model, since an account has no record to take them from. Same encryption, same masking, same priority ordering. |
+| `account_api_keys` | The only table holding a provider credential, for translation and for the assistant alike. `api_key` holds an AES 256 GCM envelope, excluded from every default query by a Sequelize scope so reading it requires asking for it by name. Each row names its own platform and chat model, so one account can hold keys for several vendors at once and a project draws on the ones matching its platform. Priority ordered, giving the fallback chain its order. |
 | `ai_chat_logs` | One row per assistant exchange. `account_id` is the namespace the conversation happened in and whose credentials paid; `user_id` is the person who asked, and holds an account id rather than the routing handle `accounts.user_id` carries. `embedding` is nullable text holding a JSON array, so an account with no embedding model configured still chats normally. |
 
 ## The translation pipeline
@@ -193,8 +194,8 @@ The editor calls it when a person wants the answer.
 
 ## API key fallback
 
-A project may hold several credentials for its provider, ordered by
-`priority_order`. The worker walks them from the top.
+An account may hold several credentials, ordered by `priority_order`. The worker
+walks them from the top.
 
 ```
 key 1 (priority 1)  -> revoked        -> try the next
@@ -214,13 +215,12 @@ decides what happens next:
 
 `REQUEST` is the important exception. It means the payload we sent was
 malformed, so every remaining credential would fail identically. Continuing
-would burn the project's real quota and hide the actual defect.
+would burn the account's real quota and hide the actual defect.
 
-### The account level chain
+### Where the chain comes from
 
-Account credentials use the same walk, over a chain assembled from two owners.
-Inside an organization the organization pays first, and the person's own
-credentials sit behind it:
+The chain is assembled from two owners. Inside an organization the organization
+pays first, and the person's own credentials sit behind it:
 
 ```
 org key 1     (organization) -> revoked      -> try the next
@@ -233,10 +233,15 @@ the caller's own personal keys: nothing in the chain can reach a credential
 belonging to another member, and a personal namespace is simply the tail of the
 chain with no head.
 
-When neither account has a usable key and the build allows it, the built in
-development credential is appended, which is what keeps the assistant runnable
-on a clean clone. That fallback is refused in production, exactly as it is for
-the translation pipeline.
+Translating a file walks the same chain, narrowed to the platform the project
+named. An OpenAI key cannot pay for an Anthropic call however high it sits in
+the order, so a project configured for one vendor only ever sees the credentials
+belonging to it.
+
+When neither account has a usable key for that platform and the build allows it,
+the built in development credential is appended, which is what keeps both the
+pipeline and the assistant runnable on a clean clone. That fallback is refused in
+production.
 
 ## The assistant
 

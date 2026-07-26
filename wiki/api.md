@@ -389,10 +389,14 @@ project underneath it. Any role may read the list, since picking a format is
 part of downloading.
 ## Account AI credentials
 
-Credentials paying for whatever a namespace does outside a single project, which
-today means the assistant. Held separately from a project's translation
-credentials, so an organization can fund the assistant without exposing the keys
-its pipelines use, or the reverse.
+The only place a provider credential is stored. These keys pay for everything the
+application sends to a vendor: translating a file inside a project and answering
+a question in the assistant alike.
+
+A credential is a billing relationship, so it belongs to the account being
+billed rather than to a project. An account may hold keys for several platforms
+at once — one for OpenAI, one for Anthropic, one for OpenRouter — and each
+project draws on the ones matching the platform its settings name.
 
 All routes require authentication and, inside an organization, `ADMIN` or above.
 Reading is as privileged as writing here: the list is a statement about the
@@ -505,10 +509,10 @@ naming a removed format become **404**.
 }
 ```
 
-Returns **201**. Unlike a project credential, each row names its own platform
-and models, because an account has no record to take them from. `provider` must
-be in the registry `GET /providers` lists and `chat_model` must be one of that
-platform's models, otherwise **400**. `chat_model` defaults to the platform's
+Returns **201**. Each row names its own platform and models, which is what lets
+one account hold credentials for several vendors and lets a project pick between
+them. `provider` must be in the registry `GET /providers` lists and `chat_model`
+must be one of that platform's models, otherwise **400**. `chat_model` defaults to the platform's
 own default. `priority_order` defaults to the end of the chain. An account may
 hold 20 credentials.
 
@@ -552,8 +556,12 @@ The chain only ever contains the caller's own personal keys. No request can
 reach a credential belonging to another member, and a personal namespace is
 simply the chain with no organization ahead of it.
 
-With no credential configured anywhere, and outside production, the built in
-development credential answers, so the assistant works on a clean clone.
+Translating a file walks the same chain, narrowed to the platform the project
+named, so a project configured for one vendor never sees another vendor's keys.
+
+With no usable credential anywhere, and outside production, the built in
+development credential answers, so both translation and the assistant work on a
+clean clone.
 
 ---
 
@@ -782,64 +790,16 @@ Returns **204**. Cascades to files, keys and translations.
 
 ---
 
-## Project API keys
+## Project credentials
 
-All routes require authentication and, inside an organization, `ADMIN` or above.
+A project has none. It names a platform and a model in its settings, and the key
+that pays for a call is resolved from the account chain described under
+[Account AI credentials](#account-ai-credentials): the namespace that owns the project
+first, then the personal keys of whoever asked, narrowed to the platform the
+project named.
 
-**No endpoint returns a stored key.** Responses identify a credential by label
-and its last four characters.
-
-### `GET /projects/:projectId/keys`
-
-```json
-{
-  "data": {
-    "keys": [
-      {
-        "id": "...",
-        "label": "primary",
-        "masked_key": "****7890",
-        "priority_order": 1,
-        "is_active": true,
-        "last_used_at": "2026-07-25T19:00:00.000Z",
-        "last_error_at": null,
-        "last_error_reason": null
-      }
-    ]
-  }
-}
-```
-
-### `POST /projects/:projectId/keys`
-
-```json
-{
-  "api_key": "your_provider_api_key",
-  "label": "primary",
-  "priority_order": 1,
-  "is_active": true
-}
-```
-
-Returns **201**. `priority_order` defaults to the end of the chain, so a new key
-never silently displaces the one in use.
-
-### `PATCH /projects/:projectId/keys/:keyId`
-
-Any of `api_key`, `label`, `priority_order`, `is_active`.
-
-### `POST /projects/:projectId/keys/reorder`
-
-```json
-{ "ordered_key_ids": ["id_three", "id_one", "id_two"] }
-```
-
-Must list every key on the project exactly once. This is the order the fallback
-chain will walk.
-
-### `DELETE /projects/:projectId/keys/:keyId`
-
-Returns **204**.
+There is therefore no `/projects/:projectId/keys` endpoint. Manage credentials at
+`/namespaces/:namespace/settings/ai_keys`.
 
 ---
 

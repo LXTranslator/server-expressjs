@@ -308,12 +308,18 @@ async function loadForAccount(accountId, origin) {
  * credential is appended so the assistant runs with no configuration at all.
  * That fallback is refused in production.
  *
+ * A `provider` narrows the chain to credentials for one platform, which is what
+ * the translation pipeline needs: a project picks its platform and model, and
+ * only a credential for that platform can pay for it. The assistant passes no
+ * provider, because it takes the platform from whichever credential answers.
+ *
  * @param {object} params Chain parameters.
  * @param {object} params.namespace Namespace account the caller is acting in.
  * @param {object} params.actor Authenticated account making the request.
+ * @param {string} [params.provider] Platform to narrow the chain to.
  * @returns {Promise<Array<object>>} Decrypted credentials, highest priority first.
  */
-async function loadDecryptedKeys({ namespace, actor }) {
+async function loadDecryptedKeys({ namespace, actor, provider }) {
   const organizationKeys =
     namespace.type === 'ORG' ? await loadForAccount(namespace.id, 'ORG') : [];
 
@@ -322,14 +328,18 @@ async function loadDecryptedKeys({ namespace, actor }) {
   // the tail of it behind the organization's.
   const personalKeys = await loadForAccount(actor.id, 'USER');
 
-  const keys = [...organizationKeys, ...personalKeys];
+  const chain = [...organizationKeys, ...personalKeys];
+  const keys =
+    provider === undefined ? chain : chain.filter((key) => key.provider === provider);
 
   if (keys.length === 0 && config.ai.allowDefaultApiKey && config.ai.defaultApiKey) {
     keys.push({
       id: null,
       accountId: null,
       origin: 'BUILT_IN',
-      provider: config.ai.defaultProvider,
+      // Named as whatever was asked for, so the offline provider still answers
+      // a project configured for it with nothing else set up anywhere.
+      provider: provider ?? config.ai.defaultProvider,
       chatModel: config.ai.defaultModel,
       embeddingModel: null,
       apiKey: config.ai.defaultApiKey,

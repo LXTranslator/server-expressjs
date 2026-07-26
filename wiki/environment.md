@@ -150,11 +150,13 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 `JWT_SECRET` signs every session and action token. `ENCRYPTION_PASSPHRASE`
 derives the AES key that wraps stored provider credentials. **Changing
 `ENCRYPTION_PASSPHRASE` makes every stored API key unreadable**, so rotate it
-only alongside a re-encryption of the `project_api_keys` table.
+only alongside a re-encryption of the `account_api_keys` table.
 
 Provider API keys are **not** environment variables. They are entered per
-project through the interface and stored encrypted, which is what allows several
-keys per project and the priority ordered fallback between them.
+account through the interface and stored encrypted, which is what allows several
+keys per account, across several platforms, and the priority ordered fallback
+between them. A project names a platform and a model only; it borrows the key
+from the account that owns it.
 
 ## Variable reference
 
