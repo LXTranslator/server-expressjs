@@ -19,11 +19,20 @@ const ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 // src/infrastructure/ai/providers/anthropic.js
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+
+// src/infrastructure/ai/providers/openrouter.js
+const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 ```
 
 A project stores a provider **name**, which is resolved through a fixed registry
 in `src/infrastructure/ai/providers/index.js`. A tampered database row can
 select a different adapter but cannot introduce a new destination.
+
+OpenRouter is a broker, so the vendor actually answering the call varies with
+the model name. That does not widen the destination: the model is checked
+against the adapter's fixed list before the call, and every request still leaves
+for the one constant above. **A model name is never appended to a URL**, which
+is what would turn the allowlist back into a path a caller controls.
 
 ## Rules
 
