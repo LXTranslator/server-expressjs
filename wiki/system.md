@@ -50,6 +50,8 @@ accounts ──┬─< org_members >── accounts          (organization membe
 
 accounts ──< auth_tokens                          (single use short lived tokens)
 accounts ──< export_formats                       (download shapes, shared by every project)
+accounts ──< account_api_keys                     (encrypted, priority ordered, per namespace)
+accounts ──< ai_chat_logs                         (one row per assistant exchange)
 ```
 
 Every child relation cascades on delete, so removing a namespace removes its
@@ -69,6 +71,8 @@ left behind.
 | `translations` | Unique on `(translation_key_id, lang_code)`. `source_hash` records the fingerprint at translation time, which is how staleness is detected. `is_manual` protects human edits from a rerun. |
 | `auth_tokens` | Ledger making short lived tokens genuinely single use. Stores a SHA-256 digest, never the token. |
 | `export_formats` | Unique on `(namespace_account_id, format_id)`. Describes the shape of a downloaded locale document as data, never as a template: a leaf shape, the field names to emit, and whether dotted paths expand into a tree. Hangs off the namespace so one shape serves every project underneath. |
+| `account_api_keys` | The mirror of `project_api_keys` one level up, paying for what an account does outside a single project. Each row names its own platform and chat model, since an account has no record to take them from. Same encryption, same masking, same priority ordering. |
+| `ai_chat_logs` | One row per assistant exchange. `account_id` is the namespace the conversation happened in and whose credentials paid; `user_id` is the person who asked, and holds an account id rather than the routing handle `accounts.user_id` carries. `embedding` is nullable text holding a JSON array, so an account with no embedding model configured still chats normally. |
 
 ## The translation pipeline
 
@@ -211,6 +215,28 @@ decides what happens next:
 `REQUEST` is the important exception. It means the payload we sent was
 malformed, so every remaining credential would fail identically. Continuing
 would burn the project's real quota and hide the actual defect.
+
+### The account level chain
+
+Account credentials use the same walk, over a chain assembled from two owners.
+Inside an organization the organization pays first, and the person's own
+credentials sit behind it:
+
+```
+org key 1     (organization) -> revoked      -> try the next
+org key 2     (organization) -> out of quota -> try the next
+personal key  (the caller)   -> succeeds     -> done
+```
+
+An expired company card stops one purchase rather than the whole team. Only ever
+the caller's own personal keys: nothing in the chain can reach a credential
+belonging to another member, and a personal namespace is simply the tail of the
+chain with no head.
+
+When neither account has a usable key and the build allows it, the built in
+development credential is appended, which is what keeps the assistant runnable
+on a clean clone. That fallback is refused in production, exactly as it is for
+the translation pipeline.
 
 ## Authentication
 

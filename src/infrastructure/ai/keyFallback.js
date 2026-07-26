@@ -7,16 +7,16 @@ const { ProviderError, PROVIDER_ERROR_KINDS } = require('./providerError');
 /**
  * API key fallback executor.
  *
- * A project may register several credentials for its chosen provider. This
- * function walks them in `priority_order` and moves to the next one whenever an
- * attempt fails for a reason that another credential could plausibly survive:
- * a revoked key, an exhausted quota, a throttled key, a vendor outage.
+ * A caller may hold several credentials for the work it is about to do. These
+ * functions walk them in priority order and move to the next one whenever an
+ * attempt fails for a reason another credential could plausibly survive: a
+ * revoked key, an exhausted quota, a throttled key, a vendor outage.
  *
  * Two rules keep the walk from doing something useless or harmful:
  *
  *   1. A `REQUEST` failure means the payload itself is wrong. Every remaining
  *      key would fail identically, so the chain stops immediately rather than
- *      burning the project's other credentials on a defect of our own making.
+ *      burning the caller's other credentials on a defect of our own making.
  *   2. Transient categories get a bounded retry against the same key before the
  *      chain advances, so a single blip does not permanently demote the
  *      preferred credential.
@@ -36,6 +36,97 @@ function backoff(attempt) {
   return new Promise((resolve) => {
     setTimeout(resolve, delay);
   });
+}
+
+/**
+ * Walks a credential chain until one attempt succeeds.
+ *
+ * The work itself is the caller's, passed in as `attempt`. Everything about
+ * which credential to try next, how often, and when to stop lives here, so a
+ * translation batch and an account level chat turn cannot drift into two
+ * different fallback rules.
+ *
+ * @param {object} params Execution parameters.
+ * @param {Array<object>} params.keys Candidate credentials, already decrypted
+ *   and already sorted by priority.
+ * @param {(key: object) => Promise<*>} params.attempt Work to run against one
+ *   credential. Rejecting with a {@link ProviderError} drives the chain.
+ * @param {string} params.emptyMessage Message for the failure raised when the
+ *   chain holds no credential at all.
+ * @param {string} [params.provider] Provider name recorded on raised errors.
+ * @param {(event: object) => void} [params.onAttempt] Observer for telemetry.
+ * @returns {Promise<{value: *, keyId: string|null, key: object, attempts: object[]}>}
+ * @throws {ProviderError} When no credential succeeds.
+ */
+async function runWithKeyFallback({ keys, attempt, emptyMessage, provider, onAttempt }) {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    throw new ProviderError(PROVIDER_ERROR_KINDS.AUTH, emptyMessage, { provider });
+  }
+
+  const attempts = [];
+  let lastError = null;
+
+  for (const key of keys) {
+    for (let retry = 0; retry < config.ai.maxAttemptsPerKey; retry += 1) {
+      try {
+        const value = await attempt(key);
+
+        attempts.push({ keyId: key.id, outcome: 'SUCCESS', retry });
+        if (onAttempt) onAttempt({ keyId: key.id, outcome: 'SUCCESS' });
+
+        return { value, keyId: key.id, key, attempts };
+      } catch (error) {
+        const providerError =
+          error instanceof ProviderError
+            ? error
+            : new ProviderError(
+                PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
+                'The provider adapter raised an unexpected error.',
+                { provider: key.provider ?? provider, cause: error },
+              );
+
+        lastError = providerError;
+        attempts.push({
+          keyId: key.id,
+          outcome: 'FAILED',
+          kind: providerError.kind,
+          retry,
+        });
+        if (onAttempt) {
+          onAttempt({
+            keyId: key.id,
+            outcome: 'FAILED',
+            kind: providerError.kind,
+            reason: providerError.message,
+          });
+        }
+
+        // Our own request is malformed. Trying the remaining keys would fail
+        // the same way and would waste real quota, so stop here.
+        if (!providerError.shouldTryNextKey) {
+          providerError.attempts = attempts;
+          throw providerError;
+        }
+
+        // Transient category: give this key one more chance before demoting it.
+        const hasRetryBudget = retry < config.ai.maxAttemptsPerKey - 1;
+        if (providerError.isRetryableWithSameKey && hasRetryBudget) {
+          await backoff(retry);
+          continue;
+        }
+
+        break; // Advance to the next credential.
+      }
+    }
+  }
+
+  const exhausted = new ProviderError(
+    lastError?.kind ?? PROVIDER_ERROR_KINDS.AUTH,
+    `Every configured API key failed. Last failure: ${lastError?.message ?? 'unknown'}`,
+    { provider },
+  );
+  exhausted.attempts = attempts;
+  throw exhausted;
 }
 
 /**
@@ -70,76 +161,22 @@ async function translateWithKeyFallback({
     );
   }
 
-  if (!Array.isArray(keys) || keys.length === 0) {
-    throw new ProviderError(
-      PROVIDER_ERROR_KINDS.AUTH,
-      'The project has no active API key for its selected provider.',
-      { provider: providerName },
-    );
-  }
+  const { value, keyId, attempts } = await runWithKeyFallback({
+    keys,
+    provider: providerName,
+    emptyMessage: 'The project has no active API key for its selected provider.',
+    onAttempt,
+    attempt: (key) =>
+      provider.translateBatch({
+        apiKey: key.apiKey,
+        model,
+        sourceLang,
+        targetLang,
+        texts,
+      }),
+  });
 
-  const attempts = [];
-  let lastError = null;
-
-  for (const key of keys) {
-    for (let retry = 0; retry < config.ai.maxAttemptsPerKey; retry += 1) {
-      try {
-        const translations = await provider.translateBatch({
-          apiKey: key.apiKey,
-          model,
-          sourceLang,
-          targetLang,
-          texts,
-        });
-
-        attempts.push({ keyId: key.id, outcome: 'SUCCESS', retry });
-        if (onAttempt) onAttempt({ keyId: key.id, outcome: 'SUCCESS' });
-
-        return { translations, keyId: key.id, attempts };
-      } catch (error) {
-        const providerError =
-          error instanceof ProviderError
-            ? error
-            : new ProviderError(
-                PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-                'The provider adapter raised an unexpected error.',
-                { provider: providerName, cause: error },
-              );
-
-        lastError = providerError;
-        attempts.push({
-          keyId: key.id,
-          outcome: 'FAILED',
-          kind: providerError.kind,
-          retry,
-        });
-        if (onAttempt) {
-          onAttempt({ keyId: key.id, outcome: 'FAILED', kind: providerError.kind, reason: providerError.message });
-        }
-
-        // Our own request is malformed. Trying the remaining keys would fail
-        // the same way and would waste real quota, so stop here.
-        if (!providerError.shouldTryNextKey) {
-          throw providerError;
-        }
-
-        // Transient category: give this key one more chance before demoting it.
-        const hasRetryBudget = retry < config.ai.maxAttemptsPerKey - 1;
-        if (providerError.isRetryableWithSameKey && hasRetryBudget) {
-          await backoff(retry);
-          continue;
-        }
-
-        break; // Advance to the next credential.
-      }
-    }
-  }
-
-  throw new ProviderError(
-    lastError?.kind ?? PROVIDER_ERROR_KINDS.AUTH,
-    `Every configured API key failed. Last failure: ${lastError?.message ?? 'unknown'}`,
-    { provider: providerName },
-  );
+  return { translations: value, keyId, attempts };
 }
 
-module.exports = { translateWithKeyFallback };
+module.exports = { translateWithKeyFallback, runWithKeyFallback };

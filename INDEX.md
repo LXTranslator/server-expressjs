@@ -83,11 +83,13 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/translation.js`](src/infrastructure/database/models/translation.js) | Per language translated strings. |
 | [`src/infrastructure/database/models/authToken.js`](src/infrastructure/database/models/authToken.js) | Single use short lived token ledger. |
 | [`src/infrastructure/database/models/exportFormat.js`](src/infrastructure/database/models/exportFormat.js) | Download shapes owned by a namespace. |
+| [`src/infrastructure/database/models/accountApiKey.js`](src/infrastructure/database/models/accountApiKey.js) | Encrypted namespace level AI credentials with platform, model and priority order. |
+| [`src/infrastructure/database/models/aiChatLog.js`](src/infrastructure/database/models/aiChatLog.js) | Assistant conversation history, token usage and embeddings. |
 | [`src/infrastructure/crypto/secretBox.js`](src/infrastructure/crypto/secretBox.js) | AES 256 GCM encryption for stored credentials. |
 | [`src/infrastructure/email/mailer.js`](src/infrastructure/email/mailer.js) | Console and SMTP mail transports. |
 | [`src/infrastructure/ai/providerError.js`](src/infrastructure/ai/providerError.js) | Provider failure categories driving the fallback chain. |
 | [`src/infrastructure/ai/prompt.js`](src/infrastructure/ai/prompt.js) | Prompt construction and reply validation. |
-| [`src/infrastructure/ai/keyFallback.js`](src/infrastructure/ai/keyFallback.js) | Credential fallback executor. |
+| [`src/infrastructure/ai/keyFallback.js`](src/infrastructure/ai/keyFallback.js) | Credential fallback executor, shared by the pipeline and the account chain. |
 | [`src/infrastructure/ai/providers/index.js`](src/infrastructure/ai/providers/index.js) | Fixed provider registry. |
 | [`src/infrastructure/ai/providers/mock.js`](src/infrastructure/ai/providers/mock.js) | Offline provider for zero configuration runs. |
 | [`src/infrastructure/ai/providers/openai.js`](src/infrastructure/ai/providers/openai.js) | OpenAI chat completions adapter. |
@@ -137,6 +139,8 @@ One directory per business capability.
 | [`src/modules/translations/translationExport.js`](src/modules/translations/translationExport.js) | Value and hash export format builder. |
 | [`src/modules/translations/translationConsistency.js`](src/modules/translations/translationConsistency.js) | On demand master to translation consistency report. |
 | [`src/modules/translations/translation.schemas.js`](src/modules/translations/translation.schemas.js) | Translation edit request schemas. |
+| [`src/modules/accountKeys/accountKey.service.js`](src/modules/accountKeys/accountKey.service.js) | Namespace AI credentials and the organization to personal fallback chain. |
+| [`src/modules/accountKeys/accountKey.schemas.js`](src/modules/accountKeys/accountKey.schemas.js) | Namespace AI credential request schemas. |
 | [`src/modules/exportFormats/exportFormat.definitions.js`](src/modules/exportFormats/exportFormat.definitions.js) | Built in format descriptors and field name rules. |
 | [`src/modules/exportFormats/exportFormat.service.js`](src/modules/exportFormats/exportFormat.service.js) | Namespace owned export format management. |
 | [`src/modules/exportFormats/exportFormat.schemas.js`](src/modules/exportFormats/exportFormat.schemas.js) | Export format request schemas. |
@@ -176,6 +180,7 @@ Off thread execution of the translation pipeline.
 | [`tests/archive.test.js`](tests/archive.test.js) | ZIP writer round trips, entry name safety and the archive download. |
 | [`tests/exportFormat.test.js`](tests/exportFormat.test.js) | Built in and namespace owned export formats, and the download shapes they produce. |
 | [`tests/consistency.test.js`](tests/consistency.test.js) | Placeholder extraction, single key updates, partial retranslation and the consistency check. |
+| [`tests/accountAi.test.js`](tests/accountAi.test.js) | Namespace AI credentials, the organization to personal fallback chain and the chat log table. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
 

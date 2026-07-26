@@ -8,9 +8,11 @@ const namespaceService = require('./namespace.service');
 const orgService = require('../orgs/org.service');
 const projectService = require('../projects/project.service');
 const exportFormatService = require('../exportFormats/exportFormat.service');
+const accountKeyService = require('../accountKeys/accountKey.service');
 const orgSchemas = require('../orgs/org.schemas');
 const projectSchemas = require('../projects/project.schemas');
 const exportFormatSchemas = require('../exportFormats/exportFormat.schemas');
+const accountKeySchemas = require('../accountKeys/accountKey.schemas');
 
 const router = express.Router();
 
@@ -207,6 +209,94 @@ router.delete(
       namespaceService.assertRole(req.namespaceRole, 'ADMIN');
     }
     await exportFormatService.removeFormat(req.namespace.id, req.params.formatId);
+    res.status(204).send();
+  }),
+);
+
+/*
+ * Account level AI credentials.
+ *
+ * These pay for whatever the namespace does outside a single project, so inside
+ * an organization they are an owner and administrator concern in the same way
+ * membership and billing are: reading the list is as privileged as changing it,
+ * because the list is a statement about the organization's spending.
+ *
+ * That is the one place this differs from the export formats above, where any
+ * member may read because picking a format is part of downloading.
+ *
+ * As with project credentials, no endpoint here returns a stored key at any
+ * role.
+ */
+
+/**
+ * Requires at least ADMIN inside an organization.
+ *
+ * A personal namespace has a single owner, so the check is a no operation
+ * there.
+ *
+ * @param {import('express').Request} req Request.
+ * @param {import('express').Response} res Response.
+ * @param {Function} next Express next handler.
+ * @returns {void}
+ */
+function requireNamespaceAdmin(req, res, next) {
+  if (req.namespace.type === 'ORG') {
+    namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+  }
+  next();
+}
+
+router.get(
+  '/:namespace/settings/ai_keys',
+  requireNamespaceAdmin,
+  asyncHandler(async (req, res) => {
+    const keys = await accountKeyService.listApiKeys(req.namespace.id);
+    res.json({ data: { keys } });
+  }),
+);
+
+router.post(
+  '/:namespace/settings/ai_keys',
+  requireNamespaceAdmin,
+  validate(accountKeySchemas.addAccountApiKeySchema),
+  asyncHandler(async (req, res) => {
+    const key = await accountKeyService.addApiKey(req.namespace.id, req.body);
+    res.status(201).json({ data: { key } });
+  }),
+);
+
+router.post(
+  '/:namespace/settings/ai_keys/reorder',
+  requireNamespaceAdmin,
+  validate(accountKeySchemas.reorderAccountApiKeysSchema),
+  asyncHandler(async (req, res) => {
+    const keys = await accountKeyService.reorderApiKeys(
+      req.namespace.id,
+      req.body.ordered_key_ids,
+    );
+    res.json({ data: { keys } });
+  }),
+);
+
+router.patch(
+  '/:namespace/settings/ai_keys/:keyId',
+  requireNamespaceAdmin,
+  validate(accountKeySchemas.updateAccountApiKeySchema),
+  asyncHandler(async (req, res) => {
+    const key = await accountKeyService.updateApiKey(
+      req.namespace.id,
+      req.params.keyId,
+      req.body,
+    );
+    res.json({ data: { key } });
+  }),
+);
+
+router.delete(
+  '/:namespace/settings/ai_keys/:keyId',
+  requireNamespaceAdmin,
+  asyncHandler(async (req, res) => {
+    await accountKeyService.removeApiKey(req.namespace.id, req.params.keyId);
     res.status(204).send();
   }),
 );

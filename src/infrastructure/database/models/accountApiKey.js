@@ -3,34 +3,53 @@
 const { DataTypes } = require('sequelize');
 
 /**
- * Defines the `project_api_keys` model.
+ * Defines the `account_api_keys` model.
+ *
+ * The mirror of `project_api_keys`, one level up. A project's credentials pay
+ * for that project's translation pipeline; these pay for whatever an account
+ * does outside a single project, which today means the assistant.
+ *
+ * The differences from the project table are deliberate. A project already
+ * records its provider and model, so its credential rows carry only the secret.
+ * An account has no such record, so each row here names its own platform and
+ * model. That is also what makes the fallback chain useful across vendors: an
+ * organization can put its OpenRouter credential first and a member's personal
+ * OpenAI credential behind it, and a failure over one moves to the other.
  *
  * `api_key` never holds a plaintext credential. The service layer encrypts the
  * value with AES-256-GCM before it is written, and `last_four` exists purely so
  * the interface can identify a key without decrypting anything.
  *
- * `priority_order` drives the fallback chain: the worker tries the lowest
- * number first and moves down the list when a key fails.
- *
  * @param {import('sequelize').Sequelize} sequelize Connection instance.
- * @returns {import('sequelize').ModelStatic<any>} The ProjectApiKey model.
+ * @returns {import('sequelize').ModelStatic<any>} The AccountApiKey model.
  */
 module.exports = (sequelize) => {
-  const ProjectApiKey = sequelize.define(
-    'ProjectApiKey',
+  const AccountApiKey = sequelize.define(
+    'AccountApiKey',
     {
       id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
-      projectId: {
-        type: DataTypes.INTEGER,
+      accountId: {
+        type: DataTypes.UUID,
         allowNull: false,
-        field: 'project_id',
-        references: { model: 'projects', key: 'id' },
+        field: 'account_id',
+        references: { model: 'accounts', key: 'id' },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
+      },
+      /** Platform name, resolved through the fixed provider registry. */
+      provider: {
+        type: DataTypes.STRING(50),
+        allowNull: false,
+      },
+      /** Model used for assistant conversations on this credential. */
+      chatModel: {
+        type: DataTypes.STRING(100),
+        allowNull: false,
+        field: 'chat_model',
       },
       /** AES-256-GCM envelope, never a readable credential. */
       apiKey: {
@@ -85,7 +104,7 @@ module.exports = (sequelize) => {
       },
     },
     {
-      tableName: 'project_api_keys',
+      tableName: 'account_api_keys',
       updatedAt: 'updated_at',
       /**
        * The encrypted column is excluded from every default query. Reading it
@@ -96,17 +115,19 @@ module.exports = (sequelize) => {
       scopes: {
         withSecret: { attributes: { include: ['apiKey'] } },
       },
-      indexes: [{ fields: ['project_id', 'priority_order'] }],
+      indexes: [{ fields: ['account_id', 'priority_order'] }],
     },
   );
 
   /**
    * @returns {object} Representation that never contains key material.
    */
-  ProjectApiKey.prototype.toPublicJson = function toPublicJson() {
+  AccountApiKey.prototype.toPublicJson = function toPublicJson() {
     return {
       id: this.id,
-      project_id: this.projectId,
+      account_id: this.accountId,
+      provider: this.provider,
+      chat_model: this.chatModel,
       label: this.label,
       masked_key: this.lastFour ? `****${this.lastFour}` : '****',
       priority_order: this.priorityOrder,
@@ -118,5 +139,5 @@ module.exports = (sequelize) => {
     };
   };
 
-  return ProjectApiKey;
+  return AccountApiKey;
 };
