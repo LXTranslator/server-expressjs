@@ -166,6 +166,7 @@ Off thread execution of the translation pipeline.
 | [`tests/organization.test.js`](tests/organization.test.js) | Organization creation, availability and deletion tests. |
 | [`tests/project.test.js`](tests/project.test.js) | Project name scoping, identifier sequencing and malformed identifier tests. |
 | [`tests/fileGrowth.test.js`](tests/fileGrowth.test.js) | Adding languages and merging new keys into an existing file. |
+| [`tests/locale.test.js`](tests/locale.test.js) | Locale code acceptance across the whole supported catalogue. |
 | [`tests/archive.test.js`](tests/archive.test.js) | ZIP writer round trips, entry name safety and the archive download. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |

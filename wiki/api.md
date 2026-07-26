@@ -34,6 +34,13 @@ Authorization: Bearer your_access_token
 | `:projectId` | A positive integer. Project rows share one table and one sequence, so the identifier is unique on its own. Anything that is not a positive integer is **404**. |
 | `:fileId`, `:keyId`, `:memberId`, `:translationId` | UUIDs. |
 
+A **locale code** is two to eight lowercase letters, optionally followed by an
+underscore and a two to eight character region or script subtag: `en_us`,
+`th_th`, `bar`, `nds_de`, `zlm_arab`. The language part is not restricted to two
+letters, because many translatable locales have no two letter form. The
+character set is deliberately narrow, since a locale code reaches a generated
+filename, a `Content-Disposition` header and a ZIP entry name.
+
 A project **name** is unique only within its namespace, so two accounts may each
 hold a project called `website`. Address a project by its identifier, never by
 its name alone.

@@ -43,6 +43,10 @@ that case.
    `resolveWithinDirectory` first.
 2. **Never `path.join` a client filename.** Use a generated identifier.
 3. **Locale codes reach filenames, so validate them.** `LANG_CODE_PATTERN`
-   restricts them to a strict form before they are used in a
-   `Content-Disposition` header or an export filename.
+   restricts them to lowercase letters, digits and a single underscore before
+   they are used in a `Content-Disposition` header, an export filename or a ZIP
+   entry name. The language part is two to eight letters rather than exactly
+   two, because many translatable locales have no two letter code; that widens
+   which names are accepted but not which characters, which is the part that
+   matters here. Never relax the character set.
 4. **Adding a new filesystem operation?** Add a containment test alongside it.

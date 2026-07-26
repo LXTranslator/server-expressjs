@@ -7,7 +7,7 @@ const langCodeSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(LANG_CODE_PATTERN, 'Use a locale code such as en_us or th_th.');
+  .regex(LANG_CODE_PATTERN, 'Use a locale code such as en_us, th_th or nds_de.');
 
 /**
  * Upload metadata.
