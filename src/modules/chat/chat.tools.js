@@ -185,7 +185,7 @@ const TOOLS = [
   {
     name: 'create_project',
     description:
-      'Create a project in the current namespace. A JSON locale file attached to the message is uploaded into it and translated; without one the project is created empty.',
+      'Create a NEW project in the current namespace. A JSON locale file attached to the message is uploaded into it and translated; without one the project is created empty. To put a file into a project that already exists, use upload_file instead: never suggest deleting or recreating a project for that.',
     parameters: {
       type: 'object',
       properties: {
@@ -257,7 +257,7 @@ const TOOLS = [
           project: { id: project.id, name: project.name },
           message: `Created the project "${project.name}".`,
           instruction:
-            'Tell the person the project is empty, and that attaching a JSON locale file to a message will start the translation.',
+            'Tell the person the project is empty, and that attaching a JSON locale file to a message lets you upload it with the upload_file tool. The project never needs recreating for that.',
         });
       }
 
@@ -295,6 +295,123 @@ const TOOLS = [
         }
         throw error;
       }
+    },
+  },
+
+  {
+    name: 'upload_file',
+    description:
+      'Upload the JSON locale file attached to this message into a project that already exists, and translate it into the given languages. Use this whenever the project is already there; create_project is only for making a new one.',
+    parameters: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to upload into.' },
+        target_langs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Locales to translate into, such as ["ja_jp", "zh_cn"].',
+        },
+        source_lang: {
+          type: 'string',
+          description: 'Locale of the attached file, such as en_us. Defaults to en_us.',
+        },
+      },
+      required: ['project_id', 'target_langs'],
+      additionalProperties: false,
+    },
+    schema: z
+      .object({
+        project_id: z.union([z.number(), z.string()]),
+        target_langs: targetLangsSchema,
+        source_lang: langCodeSchema.optional(),
+      })
+      .strict(),
+
+    /**
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const { access, failure } = await resolveProject(context, args.project_id);
+      if (failure !== null) return failure;
+
+      const denied = requireAdmin(access);
+      if (denied !== null) return denied;
+
+      // Without an attachment there is nothing to upload, and the person needs
+      // telling rather than the model inventing a reason it failed.
+      if (context.attachment === null) {
+        return fail('No file is attached to this message.', {
+          project: { id: access.project.id, name: access.project.name },
+          instruction:
+            'Ask the person to attach a JSON locale file to their message, then upload it again. The project itself is fine and does not need recreating.',
+        });
+      }
+
+      try {
+        const { file } = await fileService.createUpload({
+          project: access.project,
+          file: context.attachment,
+          sourceLang: args.source_lang,
+          targetLangs: args.target_langs,
+        });
+
+        return ok({
+          project: { id: access.project.id, name: access.project.name },
+          file: { id: file.id, filename: file.filename, status: file.status },
+          target_langs: args.target_langs,
+          message: `Uploaded ${file.filename} into "${access.project.name}" and started translating it.`,
+          instruction:
+            'Tell the person translation is running in the background and the file status will become READY.',
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return fail(error.message, {
+            project: { id: access.project.id, name: access.project.name },
+            instruction:
+              'Explain what went wrong with the upload. The project still exists, so it does not need recreating.',
+          });
+        }
+        throw error;
+      }
+    },
+  },
+
+  {
+    name: 'list_files',
+    description:
+      'List the files already uploaded into a project, with the status of each.',
+    parameters: {
+      type: 'object',
+      properties: { project_id: { type: 'integer', description: 'Project identifier.' } },
+      required: ['project_id'],
+      additionalProperties: false,
+    },
+    schema: z.object({ project_id: z.union([z.number(), z.string()]) }).strict(),
+
+    /**
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const { access, failure } = await resolveProject(context, args.project_id);
+      if (failure !== null) return failure;
+
+      const files = await fileService.listFiles(access.project.id);
+
+      return ok({
+        project: { id: access.project.id, name: access.project.name },
+        file_count: files.length,
+        files: files.map((file) => ({
+          id: file.id,
+          filename: file.filename,
+          status: file.status,
+          key_count: file.key_count,
+          target_lang_codes: file.target_lang_codes,
+        })),
+      });
     },
   },
 

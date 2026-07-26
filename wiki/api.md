@@ -611,7 +611,9 @@ not fail the request: it appears in `tool_calls` with `ok: false` and an
 | `check_project_languages` | Master language, per file sources and targets | Project access |
 | `get_project_description` | Reads a description | Project access |
 | `update_project_description` | Replaces a description | `ADMIN` in an organization |
-| `create_project` | Creates a project, uploading the attachment when present | `ADMIN` in an organization |
+| `create_project` | Creates a **new** project, uploading the attachment when present | `ADMIN` in an organization |
+| `upload_file` | Uploads the attachment into a project that **already exists** | `ADMIN` in an organization |
+| `list_files` | Lists a project's files and their status | Project access |
 | `add_languages` | Adds targets to one project, several, or all | `ADMIN` in an organization |
 | `find_chat` | Searches the caller's own past conversations | Namespace access |
 | `stop` | Ends the turn with a summary | None |
@@ -625,6 +627,11 @@ before any service sees them.
 `create_project` instructs rather than guesses: asked to translate with no file
 attached it says so, and a name already taken comes back with a suggestion to
 choose another.
+
+`upload_file` is the one to use when the project is already there. Both tools
+take the same single attachment, so an attached file can reach either a new
+project or an existing one, and neither ever requires deleting or recreating a
+project to get a file into it.
 
 `add_languages` touches at most 25 projects per call. Files that cannot take a
 language are reported in `skipped` with a reason rather than failing the rest.
