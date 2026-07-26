@@ -2,6 +2,7 @@
 
 const { z } = require('zod');
 const { LANG_CODE_PATTERN } = require('./file.service');
+const { formatIdSchema } = require('../exportFormats/exportFormat.schemas');
 
 const langCodeSchema = z
   .string()
@@ -49,11 +50,16 @@ const uploadSchema = z
  * `format=zip` returns every locale in one archive. It is a separate field
  * rather than a separate route so there is one download endpoint to authorise
  * and one place where the locale filter is applied.
+ *
+ * `format` and `export_format` answer different questions and are deliberately
+ * separate: `format` is how the download is packaged, `export_format` is the
+ * shape of the documents inside it. Either can change without the other.
  */
 const exportQuerySchema = z
   .object({
     lang: langCodeSchema.optional(),
     format: z.enum(['json', 'zip']).optional(),
+    export_format: formatIdSchema.optional(),
   })
   .strict();
 

@@ -381,6 +381,12 @@ above, and nobody may grant a role above their own.
 Returns **204**. Members may remove themselves; removing anyone else requires
 `ADMIN`. The last `OWNER` cannot be removed or demoted.
 
+### `GET /namespaces/:namespace/export_formats`
+
+The shapes a locale document can be downloaded in. A format belongs to the
+namespace rather than to a project, so one is written once and offered by every
+project underneath it. Any role may read the list, since picking a format is
+part of downloading.
 ## Account AI credentials
 
 Credentials paying for whatever a namespace does outside a single project, which
@@ -400,6 +406,27 @@ and its last four characters.
 ```json
 {
   "data": {
+    "export_formats": [
+      {
+        "format_id": "default",
+        "name": "Value and hash",
+        "description": "Every leaf carries the translated string and the fingerprint...",
+        "leaf_shape": "OBJECT",
+        "value_field": "value",
+        "hash_field": "hash",
+        "nested": true,
+        "built_in": true,
+        "created_at": null
+      },
+      {
+        "format_id": "key_value",
+        "name": "Key and value",
+        "leaf_shape": "STRING",
+        "value_field": null,
+        "hash_field": null,
+        "nested": true,
+        "built_in": true,
+        "created_at": null
     "keys": [
       {
         "id": "...",
@@ -419,6 +446,51 @@ and its last four characters.
 }
 ```
 
+`default` and `key_value` ship with the application and exist in every
+namespace. They are listed first and cannot be changed or removed: **409** on a
+`PATCH`, a `DELETE`, or a `POST` that reuses one of their identifiers.
+
+### `POST /namespaces/:namespace/export_formats`
+
+Creates a format for the namespace. Requires `ADMIN` or above inside an
+organization.
+
+```json
+{
+  "format_id": "flat_text",
+  "name": "Flat text",
+  "description": "One dotted key per line, no fingerprint.",
+  "leaf_shape": "STRING",
+  "nested": false
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `format_id` | yes | 2 to 50 lowercase letters, digits and underscores. Unique within the namespace and immutable afterwards, since a build script downloads with it. |
+| `name` | yes | Up to 80 characters. |
+| `description` | no | Up to 500 characters. |
+| `leaf_shape` | no | `OBJECT` (default) writes a leaf object; `STRING` writes the translated text itself. |
+| `value_field` | no | Field holding the translation. `OBJECT` only, defaults to `value`. |
+| `hash_field` | no | Field holding the fingerprint. `OBJECT` only, defaults to `hash`. Pass `null` for a leaf with no fingerprint. |
+| `nested` | no | `true` (default) expands `greeting.hello` into a tree; `false` keeps it as one key. |
+
+A format is a description, never a template, so nothing stored here is
+evaluated. Field names must start with a letter and hold only lowercase letters,
+digits and underscores, which is what keeps a name such as `__proto__` out
+(**422**). Naming a field on a `STRING` leaf, or giving the value and the hash
+the same name, is **400**. A namespace may hold 50 formats.
+
+### `PATCH /namespaces/:namespace/export_formats/:formatId`
+
+Any of `name`, `description`, `leaf_shape`, `value_field`, `hash_field`,
+`nested`. The identifier itself cannot change. Requires `ADMIN` or above inside
+an organization.
+
+### `DELETE /namespaces/:namespace/export_formats/:formatId`
+
+Returns **204**. Requires `ADMIN` or above inside an organization. Downloads
+naming a removed format become **404**.
 ### `POST /namespaces/:namespace/settings/ai_keys`
 
 ```json
@@ -907,12 +979,131 @@ Marks the row `is_manual`, so a later pipeline run leaves it alone.
 
 ### `PATCH /files/:fileId/keys/:keyId`
 
+Updates **one** master string. The key is named in the path, so a reviewer
+correcting a single string restamps a single fingerprint; there is no endpoint
+that takes the file's whole key set and writes it back.
+
 ```json
 { "original_text": "Hello there, {name}!" }
 ```
 
+```json
+{
+  "data": {
+    "key": { "id": "...", "text_hash": "new_hash_value" },
+    "changed": true,
+    "stale_lang_codes": ["th_th", "ja_jp"]
+  }
+}
+```
+
 Editing the master restamps its fingerprint, which is exactly how every derived
 translation becomes visibly stale.
+
+`changed` is `false` when the submitted text equals the stored text, and nothing
+is written in that case. `stale_lang_codes` describes the key's current state
+rather than this one request: it lists every language now behind the master,
+including any left behind by an earlier edit. A client can use the pair to
+enable an update control only when the `en_us` text really moved.
+
+### `POST /files/:fileId/keys/retranslate`
+
+Refreshes the keys named and nothing else.
+
+```json
+{ "key_ids": ["key_one", "key_two"], "target_langs": ["th_th"] }
+```
+
+Returns **202** with the keys queued and the languages they will be produced in.
+Poll `GET /files/:fileId` until `status` is `READY` or `FAILED`.
+
+```json
+{
+  "data": {
+    "file": { "...": "..." },
+    "keys": [{ "id": "...", "key_name": "greeting.hello" }],
+    "target_langs": ["th_th"]
+  }
+}
+```
+
+`POST /files/:fileId/reprocess` re runs the whole file, which is the wrong price
+for one corrected string: on a file of a few thousand keys it spends thousands
+of strings of quota to refresh one. Here only the named keys are sent to a
+provider, and no other key is rewritten.
+
+`target_langs` is optional and defaults to every target language on the file.
+Naming a language the file does not carry is **400**; an identifier belonging to
+another file is **404**. At most 200 keys per request, and the upload rate limit
+applies, since each key costs quota in every language.
+
+A manual correction still outranks a machine rerun: a translation flagged
+`is_manual` is left alone unless the master text itself changed, in which case
+the correction was already stale.
+
+### `GET /files/:fileId/consistency`
+
+Validates that every language still matches the English master structurally.
+This is the on demand check: it never runs as a side effect of an edit, because
+it reads every key and every translation of the file and compares the
+interpolation tokens of each pair.
+
+| Query | Required | Notes |
+|---|---|---|
+| `lang` | no | Check one locale instead of all of them. |
+
+```json
+{
+  "data": {
+    "file_id": "...",
+    "master_lang_code": "en_us",
+    "checked_lang_codes": ["th_th", "ja_jp"],
+    "checked_key_count": 120,
+    "consistent": false,
+    "issue_count": 2,
+    "truncated": false,
+    "issues": [
+      {
+        "key_id": "...",
+        "key_name": "greeting.hello",
+        "lang_code": "th_th",
+        "kind": "PLACEHOLDER_MISSING",
+        "detail": "The master carries {name} and the translation does not.",
+        "token": "{name}",
+        "expected_count": 1,
+        "found_count": 0
+      }
+    ]
+  }
+}
+```
+
+| `kind` | Meaning |
+|---|---|
+| `MISSING_TRANSLATION` | The language has no row for this key. |
+| `EMPTY_TRANSLATION` | A row exists but holds no text, while the master does. |
+| `STALE_TRANSLATION` | The master changed after the translation was written. |
+| `PLACEHOLDER_MISSING` | A token the master carries is absent, or appears fewer times. |
+| `PLACEHOLDER_UNEXPECTED` | A token the master does not carry, or appears more times. |
+
+Recognised tokens are `{name}`, `{{count}}`, ICU messages such as
+`{count, plural, other {#}}`, markup and component tags (`<b>`, `<br/>`, `<0>`),
+printf conversions (`%s`, `%1$s`, `%.2f`), named printf (`%(name)s`) and colon
+prefixed names (`:page_id`). Comparison is on the exact token and on how often
+it occurs, so `<b>` and `<i>` are not interchangeable and losing one of two
+`{name}` occurrences is reported.
+
+`lang` may name a language the file was asked to produce but has not produced
+yet; every key comes back as `MISSING_TRANSLATION`. A language the file does not
+carry at all is **400**. `issue_count` is always exact; `issues` stops at 500
+entries and sets `truncated`.
+
+### `GET /files/:fileId/export_formats`
+
+The formats this file can be downloaded in, taken from the namespace that owns
+its project. Identical to
+`GET /namespaces/:namespace/export_formats`, offered here so the download screen
+does not have to resolve the namespace first.
 
 ### `GET /files/:fileId/download`
 
@@ -921,10 +1112,25 @@ translation becomes visibly stale.
 | none | Every locale in one JSON envelope, for the editor. |
 | `lang=th_th` | That locale as a JSON attachment. |
 | `format=zip` | Every locale in one archive, always named `langs.zip`. |
+| `export_format=key_value` | Written in that format. Defaults to `default`. |
+
+`format` and `export_format` answer different questions. `format` is how the
+download is packaged; `export_format` is the shape of the documents inside it.
+Either can change without the other, and `export_format` applies to all three
+packagings.
 
 `format=zip` returns `application/zip` with one entry per locale, named exactly
 as the single locale download names it, so unpacking the archive and downloading
-each language by hand produce identical trees. Any other `format` is **422**.
+each language by hand produce identical trees. The archive is named `langs.zip`
+whichever format its documents are written in. Any other `format` is **422**.
+
+`export_format` must name a format the owning namespace offers, otherwise
+**404**; a malformed identifier is **422**. With `export_format=key_value`, the
+same locale comes back ready to use as it is:
+
+```json
+{ "greeting": { "hello": "สวัสดี {name}" } }
+```
 
 Without `?lang=`, returns every locale in one envelope:
 

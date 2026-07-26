@@ -49,6 +49,7 @@ accounts ──┬─< org_members >── accounts          (organization membe
                           └─< files ──< translation_keys ──< translations
 
 accounts ──< auth_tokens                          (single use short lived tokens)
+accounts ──< export_formats                       (download shapes, shared by every project)
 accounts ──< account_api_keys                     (encrypted, priority ordered, per namespace)
 accounts ──< ai_chat_logs                         (one row per assistant exchange)
 ```
@@ -69,6 +70,7 @@ left behind.
 | `translation_keys` | `original_text` is always the English master. `text_hash` is its 36 character fingerprint. `source_text` retains the upload when it was not English. |
 | `translations` | Unique on `(translation_key_id, lang_code)`. `source_hash` records the fingerprint at translation time, which is how staleness is detected. `is_manual` protects human edits from a rerun. |
 | `auth_tokens` | Ledger making short lived tokens genuinely single use. Stores a SHA-256 digest, never the token. |
+| `export_formats` | Unique on `(namespace_account_id, format_id)`. Describes the shape of a downloaded locale document as data, never as a template: a leaf shape, the field names to emit, and whether dotted paths expand into a tree. Hangs off the namespace so one shape serves every project underneath. |
 | `account_api_keys` | The mirror of `project_api_keys` one level up, paying for what an account does outside a single project. Each row names its own platform and chat model, since an account has no record to take them from. Same encryption, same masking, same priority ordering. |
 | `ai_chat_logs` | One row per assistant exchange. `account_id` is the namespace the conversation happened in and whose credentials paid; `user_id` is the person who asked, and holds an account id rather than the routing handle `accounts.user_id` carries. `embedding` is nullable text holding a JSON array, so an account with no embedding model configured still chats normally. |
 
@@ -110,10 +112,29 @@ Decrypted credentials are passed into the worker because that is where provider
 calls happen. They exist only in that message and in memory for the duration of
 the job; nothing is written to disk and nothing reaches a log.
 
+## Export formats
+
+A download is packaged one of three ways (a single locale, every locale in one
+JSON envelope, or `langs.zip`) and its documents are written in one of the
+namespace's formats. The two questions are independent, which is why they are
+separate query fields rather than one.
+
+Two formats ship with the application and exist for every namespace without
+being stored: `default`, the value and hash shape described below, and
+`key_value`, the bare string a localization library reads directly. Neither can
+be edited or deleted, because a build script already downloads with it.
+
+A namespace may store further formats of its own, and every project underneath
+can then be downloaded in any of them. A stored format is a description rather
+than a template: it names the leaf shape (`OBJECT` or `STRING`), the field names
+an object leaf carries, and whether a dotted path expands into a tree. Nothing
+stored is evaluated, so a format is not an execution surface, and field names
+are refused before storage if they could reach `Object.prototype`.
+
 ## Change tracking
 
-Every master string carries a deterministic 36 character fingerprint, and every
-exported leaf carries it alongside the translation:
+Every master string carries a deterministic 36 character fingerprint, and the
+`default` export shape carries it alongside the translation on every leaf:
 
 ```json
 {
@@ -132,6 +153,43 @@ translation.
 
 This is a change detection fingerprint, not a security primitive. It is never
 used for authentication, signatures or password storage.
+
+Choosing `key_value` trades this away: the document holds no fingerprint, so
+staleness cannot be read from the file. `GET /files/:fileId/translations` still
+reports it, which is where the editor gets its warnings from either way.
+
+### Correcting one string
+
+A correction names one key, so it restamps one fingerprint. The response says
+whether the text really moved and which languages are now behind it, and a
+separate call refreshes exactly the keys named:
+
+```
+PATCH /files/:fileId/keys/:keyId        -> changed, stale_lang_codes
+POST  /files/:fileId/keys/retranslate   -> only those keys reach a provider
+```
+
+The whole file rerun still exists and is still the right tool after a failure.
+It is the wrong tool after a typo: it would send every key to a provider to
+refresh one of them.
+
+## Key consistency
+
+The pipeline guarantees a translation was produced from the master. It cannot
+guarantee the two still agree structurally afterwards. A model may drop a
+placeholder, a reviewer may retype `{name}` in their own language, and a locale
+added later may not cover every key. Each string looks fine on its own; the
+failure appears at runtime, as a literal brace on screen or a formatter handed
+fewer arguments than its format string expects.
+
+`GET /files/:fileId/consistency` compares the interpolation tokens of every key
+against every translation of it and reports missing tokens, invented tokens,
+missing rows, empty rows and stale rows.
+
+It runs only when asked. Comparing every key against every language on each edit
+would put the file's whole token set through a regular expression on every
+keystroke a reviewer makes, to answer a question nobody asked at that moment.
+The editor calls it when a person wants the answer.
 
 ## API key fallback
 

@@ -9,9 +9,11 @@ const chatRoutes = require('../chat/chat.routes');
 const namespaceService = require('./namespace.service');
 const orgService = require('../orgs/org.service');
 const projectService = require('../projects/project.service');
+const exportFormatService = require('../exportFormats/exportFormat.service');
 const accountKeyService = require('../accountKeys/accountKey.service');
 const orgSchemas = require('../orgs/org.schemas');
 const projectSchemas = require('../projects/project.schemas');
+const exportFormatSchemas = require('../exportFormats/exportFormat.schemas');
 const accountKeySchemas = require('../accountKeys/accountKey.schemas');
 
 const router = express.Router();
@@ -157,12 +159,72 @@ router.delete(
 );
 
 /*
+ * Export formats.
+ *
+ * They hang off the namespace rather than off a project so a shape is written
+ * once and every project underneath can be downloaded in it. Reading the list
+ * needs no more than access to the namespace, since a member has to be able to
+ * pick one on the download screen; changing the list is an ADMIN action inside
+ * an organization, as every other settings change is.
+ */
+
+router.get(
+  '/:namespace/export_formats',
+  asyncHandler(async (req, res) => {
+    const formats = await exportFormatService.listFormats(req.namespace.id);
+    res.json({ data: { export_formats: formats } });
+  }),
+);
+
+router.post(
+  '/:namespace/export_formats',
+  validate(exportFormatSchemas.createExportFormatSchema),
+  asyncHandler(async (req, res) => {
+    if (req.namespace.type === 'ORG') {
+      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+    }
+    const format = await exportFormatService.createFormat(req.namespace.id, req.body);
+    res.status(201).json({ data: { export_format: format } });
+  }),
+);
+
+router.patch(
+  '/:namespace/export_formats/:formatId',
+  validate(exportFormatSchemas.updateExportFormatSchema),
+  asyncHandler(async (req, res) => {
+    if (req.namespace.type === 'ORG') {
+      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+    }
+    const format = await exportFormatService.updateFormat(
+      req.namespace.id,
+      req.params.formatId,
+      req.body,
+    );
+    res.json({ data: { export_format: format } });
+  }),
+);
+
+router.delete(
+  '/:namespace/export_formats/:formatId',
+  asyncHandler(async (req, res) => {
+    if (req.namespace.type === 'ORG') {
+      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+    }
+    await exportFormatService.removeFormat(req.namespace.id, req.params.formatId);
+    res.status(204).send();
+  }),
+);
+
+/*
  * Account level AI credentials.
  *
  * These pay for whatever the namespace does outside a single project, so inside
  * an organization they are an owner and administrator concern in the same way
  * membership and billing are: reading the list is as privileged as changing it,
  * because the list is a statement about the organization's spending.
+ *
+ * That is the one place this differs from the export formats above, where any
+ * member may read because picking a format is part of downloading.
  *
  * As with project credentials, no endpoint here returns a stored key at any
  * role.
