@@ -12,6 +12,7 @@ const fileService = require('./file.service');
 const translationService = require('../translations/translation.service');
 const translationSchemas = require('../translations/translation.schemas');
 const fileSchemas = require('./file.schemas');
+const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 
 const router = express.Router();
 
@@ -200,15 +201,20 @@ router.post(
     if (req.namespace.type === 'ORG') {
       namespaceService.assertRole(req.namespaceRole, 'ADMIN');
     }
-    const data = await translationService.getEditorData(req.file);
+    // Rebuilt from the stored master text so a rerun does not depend on the
+    // original upload still being on disk, and because the master carries every
+    // correction made in the editor since.
+    const { content } = await fileService.buildMasterDocument(req.file.id);
 
-    // Rebuild the source document from the stored master text so a rerun does
-    // not depend on the original upload still being on disk.
-    const content = JSON.stringify(
-      Object.fromEntries(data.keys.map((key) => [key.key_name, key.original_text])),
-    );
-
-    fileService.processFile({ file: req.file, project: req.project, content });
+    // That text is English whatever the file was uploaded in. Passing the
+    // file's own source language here would translate English to English again,
+    // spending quota to make the master worse.
+    fileService.processFile({
+      file: req.file,
+      project: req.project,
+      content,
+      sourceLang: MASTER_LANG_CODE,
+    });
     res.status(202).json({ data: { file: req.file.toPublicJson() } });
   }),
 );

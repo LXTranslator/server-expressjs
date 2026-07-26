@@ -498,6 +498,40 @@ locale code, **409** for a duplicate filename in the project.
 
 `status` is `PENDING`, `PROCESSING`, `READY` or `FAILED`.
 
+### `POST /files/:fileId/languages`
+
+Adds target languages to a file that already exists.
+
+```json
+{ "target_langs": ["ja_jp", "ko_kr"] }
+```
+
+Returns **202** with the languages actually added. The existing keys are
+translated into the new locales only: a locale already present is never
+retranslated, so nothing already reviewed is disturbed and the run costs quota
+for the new languages alone. **400** when every language listed is already on
+the file, or the file has no keys yet. Inside an organization this requires
+`ADMIN`.
+
+### `POST /files/:fileId/keys`
+
+Merges a dropped locale document into a file, adding only keys it does not
+already have. Multipart, one `file` part, the same limits as an upload.
+
+```json
+{ "data": { "file": { "...": "..." }, "existing_key_count": 128 } }
+```
+
+Returns **202**. A key the file already holds is skipped entirely: its master
+text, its translations and any manual correction all survive, even when the
+dropped document carries a different value for it. Only new keys reach a
+provider, so merging a large document that contains two new strings costs two
+strings. New keys are translated into every locale the file already carries.
+Inside an organization this requires `ADMIN`.
+
+Editing an existing string is the editor's job, not an upload's, which is why a
+repeated key is skipped rather than overwritten.
+
 ### `POST /files/:fileId/reprocess`
 
 Re runs the pipeline from the stored master text. Returns **202**.
@@ -571,6 +605,16 @@ Editing the master restamps its fingerprint, which is exactly how every derived
 translation becomes visibly stale.
 
 ### `GET /files/:fileId/download`
+
+| Query | Result |
+|---|---|
+| none | Every locale in one JSON envelope, for the editor. |
+| `lang=th_th` | That locale as a JSON attachment. |
+| `format=zip` | Every locale in one archive, always named `langs.zip`. |
+
+`format=zip` returns `application/zip` with one entry per locale, named exactly
+as the single locale download names it, so unpacking the archive and downloading
+each language by hand produce identical trees. Any other `format` is **422**.
 
 Without `?lang=`, returns every locale in one envelope:
 
