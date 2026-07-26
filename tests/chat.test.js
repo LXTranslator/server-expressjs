@@ -142,10 +142,12 @@ describe('the assistant', () => {
         'create_project',
         'find_chat',
         'get_project_description',
+        'list_files',
         'list_projects',
         'stop',
         'switch_namespace',
         'update_project_description',
+        'upload_file',
       ]);
     });
 
@@ -329,6 +331,90 @@ describe('the assistant', () => {
 
       expect(files.body.data.files[0].filename).toBe('attached.json');
       await waitForFile(app, token, files.body.data.files[0].id);
+    });
+
+    it('uploads a file into a project that already exists', async () => {
+      // The case the assistant used to refuse: the project is there, the file
+      // is attached, and recreating the project was never the answer.
+      const project = await createProject(app, token, namespace, { name: 'already_there' });
+
+      const response = await request(app)
+        .post(`/api/v1/namespaces/${namespace}/chat`)
+        .set('Authorization', `Bearer ${token}`)
+        .field(
+          'message',
+          `#call:upload_file {"project_id":${project.id},"target_langs":["ja_jp","zh_cn"]}`,
+        )
+        .attach('file', Buffer.from(JSON.stringify({ greeting: 'Hello' })), 'existing.json')
+        .expect(200);
+
+      expect(response.body.data.tool_calls).toEqual([{ name: 'upload_file', ok: true }]);
+
+      const files = await request(app)
+        .get(`/api/v1/projects/${project.id}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(files.body.data.files[0].filename).toBe('existing.json');
+      expect(files.body.data.files[0].target_lang_codes.sort()).toEqual(['ja_jp', 'zh_cn']);
+      await waitForFile(app, token, files.body.data.files[0].id);
+    });
+
+    it('tells the person to attach a file rather than blaming the project', async () => {
+      const project = await createProject(app, token, namespace, { name: 'no_attachment' });
+
+      const response = await say({
+        message: `#call:upload_file {"project_id":${project.id},"target_langs":["th_th"]}`,
+      }).expect(200);
+
+      expect(response.body.data.tool_calls[0].ok).toBe(false);
+      expect(response.body.data.tool_calls[0].error).toMatch(/No file is attached/);
+    });
+
+    it('refuses to upload into a project the caller cannot reach', async () => {
+      const outsider = await registerAccount(app, {
+        user_id: 'upload_outsider',
+        email: 'upload_outsider@example.test',
+      });
+      const theirs = await createProject(app, outsider.token, outsider.account.user_id, {
+        name: 'not_yours',
+      });
+
+      const response = await request(app)
+        .post(`/api/v1/namespaces/${namespace}/chat`)
+        .set('Authorization', `Bearer ${token}`)
+        .field('message', `#call:upload_file {"project_id":${theirs.id},"target_langs":["th_th"]}`)
+        .attach('file', Buffer.from(JSON.stringify({ greeting: 'Hello' })), 'sneaky.json')
+        .expect(200);
+
+      expect(response.body.data.tool_calls[0].ok).toBe(false);
+      expect(response.body.data.tool_calls[0].error).toMatch(/does not exist/);
+
+      const files = await request(app)
+        .get(`/api/v1/projects/${theirs.id}/files`)
+        .set('Authorization', `Bearer ${outsider.token}`)
+        .expect(200);
+      expect(files.body.data.files).toHaveLength(0);
+    });
+
+    it('lists the files already in a project', async () => {
+      const project = await createProject(app, token, namespace, { name: 'has_files' });
+
+      await request(app)
+        .post(`/api/v1/projects/${project.id}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .field('target_langs', 'th_th')
+        .attach('file', Buffer.from(JSON.stringify({ hello: 'Hello' })), 'listed.json')
+        .expect(202);
+
+      const result = await dispatchTool(
+        { id: '1', name: 'list_files', arguments: { project_id: project.id } },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.files[0].filename).toBe('listed.json');
+      await waitForFile(app, token, result.files[0].id);
     });
 
     it('rejects an attachment that is not JSON, before the model sees it', async () => {

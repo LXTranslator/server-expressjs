@@ -54,7 +54,9 @@ else. A name outside that list resolves to nothing and returns a refusal.
 | `check_project_languages` | Reads | Project access |
 | `get_project_description` | Reads | Project access |
 | `find_chat` | Reads the caller's own history | Namespace access |
+| `list_files` | Reads | Project access |
 | `create_project` | Writes, may upload a file | `ADMIN` in an organization |
+| `upload_file` | Writes, uploads into an existing project | `ADMIN` in an organization |
 | `update_project_description` | Writes | `ADMIN` in an organization |
 | `add_languages` | Writes, spends provider quota | `ADMIN` in an organization |
 | `stop` | Ends the turn | None |
@@ -92,9 +94,10 @@ else. A name outside that list resolves to nothing and returns a refusal.
    anything else becomes a generic message and is logged in full.
 
 6. **Effects are bounded.** `add_languages` touches at most 25 projects per call.
-   `create_project` uploads at most the one attachment the request carried, which
-   went through the same verification an ordinary upload does. A tool that could
-   spend unbounded quota needs a ceiling before it merges.
+   `create_project` and `upload_file` each handle at most the one attachment the
+   request carried, which went through the same verification an ordinary upload
+   does. A tool that could spend unbounded quota needs a ceiling before it
+   merges.
 
 7. **Nothing destructive is exposed.** There is no tool that deletes a project, a
    file or a member, and none that touches credentials, billing or membership.
