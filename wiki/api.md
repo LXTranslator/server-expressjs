@@ -604,12 +604,124 @@ Marks the row `is_manual`, so a later pipeline run leaves it alone.
 
 ### `PATCH /files/:fileId/keys/:keyId`
 
+Updates **one** master string. The key is named in the path, so a reviewer
+correcting a single string restamps a single fingerprint; there is no endpoint
+that takes the file's whole key set and writes it back.
+
 ```json
 { "original_text": "Hello there, {name}!" }
 ```
 
+```json
+{
+  "data": {
+    "key": { "id": "...", "text_hash": "new_hash_value" },
+    "changed": true,
+    "stale_lang_codes": ["th_th", "ja_jp"]
+  }
+}
+```
+
 Editing the master restamps its fingerprint, which is exactly how every derived
 translation becomes visibly stale.
+
+`changed` is `false` when the submitted text equals the stored text, and nothing
+is written in that case. `stale_lang_codes` describes the key's current state
+rather than this one request: it lists every language now behind the master,
+including any left behind by an earlier edit. A client can use the pair to
+enable an update control only when the `en_us` text really moved.
+
+### `POST /files/:fileId/keys/retranslate`
+
+Refreshes the keys named and nothing else.
+
+```json
+{ "key_ids": ["key_one", "key_two"], "target_langs": ["th_th"] }
+```
+
+Returns **202** with the keys queued and the languages they will be produced in.
+Poll `GET /files/:fileId` until `status` is `READY` or `FAILED`.
+
+```json
+{
+  "data": {
+    "file": { "...": "..." },
+    "keys": [{ "id": "...", "key_name": "greeting.hello" }],
+    "target_langs": ["th_th"]
+  }
+}
+```
+
+`POST /files/:fileId/reprocess` re runs the whole file, which is the wrong price
+for one corrected string: on a file of a few thousand keys it spends thousands
+of strings of quota to refresh one. Here only the named keys are sent to a
+provider, and no other key is rewritten.
+
+`target_langs` is optional and defaults to every target language on the file.
+Naming a language the file does not carry is **400**; an identifier belonging to
+another file is **404**. At most 200 keys per request, and the upload rate limit
+applies, since each key costs quota in every language.
+
+A manual correction still outranks a machine rerun: a translation flagged
+`is_manual` is left alone unless the master text itself changed, in which case
+the correction was already stale.
+
+### `GET /files/:fileId/consistency`
+
+Validates that every language still matches the English master structurally.
+This is the on demand check: it never runs as a side effect of an edit, because
+it reads every key and every translation of the file and compares the
+interpolation tokens of each pair.
+
+| Query | Required | Notes |
+|---|---|---|
+| `lang` | no | Check one locale instead of all of them. |
+
+```json
+{
+  "data": {
+    "file_id": "...",
+    "master_lang_code": "en_us",
+    "checked_lang_codes": ["th_th", "ja_jp"],
+    "checked_key_count": 120,
+    "consistent": false,
+    "issue_count": 2,
+    "truncated": false,
+    "issues": [
+      {
+        "key_id": "...",
+        "key_name": "greeting.hello",
+        "lang_code": "th_th",
+        "kind": "PLACEHOLDER_MISSING",
+        "detail": "The master carries {name} and the translation does not.",
+        "token": "{name}",
+        "expected_count": 1,
+        "found_count": 0
+      }
+    ]
+  }
+}
+```
+
+| `kind` | Meaning |
+|---|---|
+| `MISSING_TRANSLATION` | The language has no row for this key. |
+| `EMPTY_TRANSLATION` | A row exists but holds no text, while the master does. |
+| `STALE_TRANSLATION` | The master changed after the translation was written. |
+| `PLACEHOLDER_MISSING` | A token the master carries is absent, or appears fewer times. |
+| `PLACEHOLDER_UNEXPECTED` | A token the master does not carry, or appears more times. |
+
+Recognised tokens are `{name}`, `{{count}}`, ICU messages such as
+`{count, plural, other {#}}`, markup and component tags (`<b>`, `<br/>`, `<0>`),
+printf conversions (`%s`, `%1$s`, `%.2f`), named printf (`%(name)s`) and colon
+prefixed names (`:page_id`). Comparison is on the exact token and on how often
+it occurs, so `<b>` and `<i>` are not interchangeable and losing one of two
+`{name}` occurrences is reported.
+
+`lang` may name a language the file was asked to produce but has not produced
+yet; every key comes back as `MISSING_TRANSLATION`. A language the file does not
+carry at all is **400**. `issue_count` is always exact; `issues` stops at 500
+entries and sets `truncated`.
 
 ### `GET /files/:fileId/download`
 

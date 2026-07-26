@@ -415,6 +415,85 @@ async function addTargetLanguages({ file, project, targetLangs }) {
 }
 
 /**
+ * Retranslates named keys only, leaving every other key untouched.
+ *
+ * The whole file rerun already exists and is the wrong tool for a corrected
+ * string: it sends every key to a provider to refresh one of them, which on a
+ * file of a few thousand strings is thousands of strings of quota to fix a
+ * typo. This takes the identifiers the caller names, rebuilds a document from
+ * just those masters, and runs the pipeline over that.
+ *
+ * The rest of the file is not merely unchanged, it is never sent: the worker
+ * receives the selected keys and nothing else.
+ *
+ * @param {object} params Parameters.
+ * @param {object} params.file File model instance.
+ * @param {object} params.project Owning project.
+ * @param {string[]} params.keyIds Translation key identifiers to refresh.
+ * @param {string[]} [params.targetLangs] Locales to produce. Defaults to the
+ *   file's own target locales.
+ * @returns {Promise<{file: object, keys: object[], targetLangs: string[], processing: Promise<void>}>}
+ * @throws {NotFoundError} When an identifier does not belong to this file.
+ * @throws {BadRequestError} When no locale would be produced.
+ */
+async function retranslateKeys({ file, project, keyIds, targetLangs }) {
+  const wanted = [...new Set(keyIds)];
+
+  // The file predicate is what stops a caller from refreshing, and so
+  // rewriting, a key in another namespace's project by naming its identifier.
+  const keys = await TranslationKey.findAll({
+    where: { id: wanted, fileId: file.id },
+    attributes: ['id', 'keyName', 'originalText'],
+    order: [['key_name', 'ASC']],
+  });
+
+  if (keys.length !== wanted.length) {
+    throw new NotFoundError('Every key must belong to this file.');
+  }
+
+  const fileLocales = new Set(file.targetLangCodes);
+  const requested =
+    targetLangs === undefined
+      ? [...fileLocales]
+      : [...new Set(targetLangs.map(assertLangCode))].filter((code) => fileLocales.has(code));
+
+  if (requested.length === 0) {
+    throw new BadRequestError(
+      targetLangs === undefined
+        ? 'This file has no target languages to refresh.'
+        : 'None of those languages are on this file.',
+    );
+  }
+
+  logger.info('Retranslating selected keys.', {
+    fileId: file.id,
+    keyCount: keys.length,
+    targetLangs: requested,
+  });
+
+  // The document is rebuilt from the stored English master, so the source is
+  // English whatever the file was originally uploaded in.
+  const content = JSON.stringify(
+    Object.fromEntries(keys.map((key) => [key.keyName, key.originalText])),
+  );
+
+  const processing = processFile({
+    file,
+    project,
+    content,
+    sourceLang: MASTER_LANG_CODE,
+    targetLangs: requested,
+  });
+
+  return {
+    file,
+    keys: keys.map((key) => ({ id: key.id, key_name: key.keyName })),
+    targetLangs: requested,
+    processing,
+  };
+}
+
+/**
  * Merges a dropped document into a file, adding only keys it does not have.
  *
  * An existing key is left exactly as it is: its master text, its translations
@@ -475,6 +554,7 @@ module.exports = {
   createUpload,
   processFile,
   addTargetLanguages,
+  retranslateKeys,
   mergeKeys,
   buildMasterDocument,
   deleteFile,
