@@ -26,6 +26,18 @@ Authenticated requests carry a bearer token:
 Authorization: Bearer your_access_token
 ```
 
+### Identifiers in paths
+
+| Segment | Form |
+|---|---|
+| `:namespace` | The routing `user_id` of a user or organization account, for example `orgA`. |
+| `:projectId` | A positive integer. Project rows share one table and one sequence, so the identifier is unique on its own. Anything that is not a positive integer is **404**. |
+| `:fileId`, `:keyId`, `:memberId`, `:translationId` | UUIDs. |
+
+A project **name** is unique only within its namespace, so two accounts may each
+hold a project called `website`. Address a project by its identifier, never by
+its name alone.
+
 ### Status codes
 
 | Code | Meaning |
@@ -108,6 +120,12 @@ form before submitting.
 ```json
 { "data": { "user_id_available": false, "email_available": true } }
 ```
+
+A namespace occupies the first path segment of a client URL, so identifiers the
+client already routes cannot be registered: `api`, `assets`, `login`,
+`namespaces`, `organizations`, `register` and `settings`. The probe reports them
+as unavailable rather than failing validation, so the form behaves the same way
+it would for a name already taken. Registering one is **422**.
 
 ### `POST /auth/register`
 

@@ -61,7 +61,7 @@ left behind.
 |---|---|
 | `accounts` | Each row is a namespace. An ORG row carries the organization's own `email`, used for billing and account notices, so those never depend on the personal address of whoever created it. `user_id` is the routing handle. The schema calls the credential column `password (Hash)`; it is named `password_hash` here so no reader can mistake it for plaintext. Also carries lockout state. |
 | `org_members` | Unique on `(org_account_id, user_account_id)`. Roles are `OWNER`, `ADMIN`, `MEMBER`. |
-| `projects` | Unique on `(namespace_account_id, name)`, so names are unique per namespace rather than globally. |
+| `projects` | Unique on `(namespace_account_id, name)`, so names are unique per namespace rather than globally: two accounts may each hold a project called `website`. `id` is an autoincrementing integer drawn from this one table, whoever owns the row, so a project identifier is unique on its own and needs no namespace to disambiguate it. |
 | `project_api_keys` | `api_key` holds an AES 256 GCM envelope. Excluded from every default query by a Sequelize scope, so reading it requires asking for it by name. |
 | `files` | Carries processing status, the requested target locales and any failure message. |
 | `translation_keys` | `original_text` is always the English master. `text_hash` is its 36 character fingerprint. `source_text` retains the upload when it was not English. |

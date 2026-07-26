@@ -10,7 +10,7 @@ description: Concepts and invariants an agent must understand before changing th
 | Term | Meaning |
 |---|---|
 | **Namespace** | An account that owns projects. Either a person (`USER`) or an organization (`ORG`). There is no separate users table. |
-| **Project** | A collection of translation files sharing one AI provider, one model and one set of credentials. |
+| **Project** | A collection of translation files sharing one AI provider, one model and one set of credentials. Belongs to exactly one namespace. Its **name** is unique only within that namespace; its **id** is an integer from a sequence shared by every project in the system. |
 | **File** | One uploaded locale document, for example `en_us.json`. |
 | **Translation key** | One translatable string, addressed by a dot separated path such as `greeting.hello`. |
 | **Master** | The English (`en_us`) text. Every other language is derived from it. |

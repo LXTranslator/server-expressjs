@@ -59,6 +59,7 @@ Framework free primitives shared by every layer.
 | [`src/core/logger.js`](src/core/logger.js) | Structured JSON logger with sensitive field redaction. |
 | [`src/core/asyncHandler.js`](src/core/asyncHandler.js) | Async route wrapper forwarding rejections to Express. |
 | [`src/core/textHash.js`](src/core/textHash.js) | Deterministic 36 character source fingerprint. |
+| [`src/core/reservedIdentifiers.js`](src/core/reservedIdentifiers.js) | Namespace identifiers the client routes to itself. |
 | [`src/core/jsonTree.js`](src/core/jsonTree.js) | JSON flattening and expansion with prototype pollution guards. |
 | [`src/core/filename.js`](src/core/filename.js) | Upload filename sanitisation and path containment. |
 
@@ -161,6 +162,7 @@ Off thread execution of the translation pipeline.
 | [`tests/pipeline.test.js`](tests/pipeline.test.js) | Upload, translation, export and staleness tests. |
 | [`tests/access.test.js`](tests/access.test.js) | Object level authorization and role tests. |
 | [`tests/organization.test.js`](tests/organization.test.js) | Organization creation, availability and deletion tests. |
+| [`tests/project.test.js`](tests/project.test.js) | Project name scoping, identifier sequencing and malformed identifier tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
 
 ## Agent Configuration
