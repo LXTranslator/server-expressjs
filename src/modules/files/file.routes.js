@@ -10,6 +10,7 @@ const { BadRequestError } = require('../../core/errors');
 const namespaceService = require('../namespaces/namespace.service');
 const fileService = require('./file.service');
 const translationService = require('../translations/translation.service');
+const exportFormatService = require('../exportFormats/exportFormat.service');
 const translationSchemas = require('../translations/translation.schemas');
 const fileSchemas = require('./file.schemas');
 const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
@@ -85,21 +86,42 @@ router.patch(
   }),
 );
 
+/** Export formats this file can be downloaded in, from its owning namespace. */
+router.get(
+  '/:fileId/export_formats',
+  asyncHandler(async (req, res) => {
+    const formats = await exportFormatService.listFormats(req.namespace.id);
+    res.json({ data: { export_formats: formats } });
+  }),
+);
+
 /**
  * Downloads generated locale files.
  *
  * Three shapes from one endpoint: `?lang=` returns that locale as a JSON
  * attachment, `?format=zip` returns every locale in one archive, and neither
  * returns every locale in a JSON envelope for the editor to render.
+ *
+ * `?export_format=` chooses the shape of the documents themselves, from the
+ * formats the owning namespace offers. It is resolved before anything is built,
+ * so an unknown name is a 404 rather than a silently defaulted download.
  */
 router.get(
   '/:fileId/download',
   validate(fileSchemas.exportQuerySchema, 'query'),
   asyncHandler(async (req, res) => {
-    const { lang, format } = validated(req, 'query');
+    const { lang, format, export_format: exportFormatId } = validated(req, 'query');
+
+    const exportFormat = await exportFormatService.resolveFormat(
+      req.namespace.id,
+      exportFormatId,
+    );
 
     if (format === 'zip') {
-      const { filename, archive } = await translationService.exportArchive(req.file);
+      const { filename, archive } = await translationService.exportArchive(
+        req.file,
+        exportFormat,
+      );
 
       // The name is a constant, so nothing caller controlled reaches the
       // header. Length is set explicitly because the body is a Buffer and the
@@ -112,7 +134,7 @@ router.get(
     }
 
     if (lang === undefined) {
-      const documents = await translationService.exportAllLocales(req.file);
+      const documents = await translationService.exportAllLocales(req.file, exportFormat);
       res.json({ data: { files: documents } });
       return;
     }
@@ -120,6 +142,7 @@ router.get(
     const { filename, document } = await translationService.exportLocale({
       file: req.file,
       langCode: lang,
+      format: exportFormat,
     });
 
     // The filename is built from a locale code that has already passed a strict

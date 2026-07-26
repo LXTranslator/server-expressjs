@@ -126,10 +126,11 @@ async function updateMasterText({ fileId, keyId, originalText }) {
  * @param {object} params Export parameters.
  * @param {object} params.file File model instance.
  * @param {string} params.langCode Locale to export.
+ * @param {object} [params.format] Export format descriptor. Defaults to `default`.
  * @returns {Promise<{filename: string, document: object}>}
  * @throws {BadRequestError} When the file holds no data for that locale.
  */
-async function exportLocale({ file, langCode }) {
+async function exportLocale({ file, langCode, format }) {
   const keys = await loadTranslationKeys(file.id);
   const available = listAvailableLocales(keys);
 
@@ -141,7 +142,7 @@ async function exportLocale({ file, langCode }) {
 
   return {
     filename: `${langCode}.json`,
-    document: buildLocaleDocument({ translationKeys: keys, langCode }),
+    document: buildLocaleDocument({ translationKeys: keys, langCode, format }),
   };
 }
 
@@ -149,11 +150,12 @@ async function exportLocale({ file, langCode }) {
  * Builds every locale document for a file.
  *
  * @param {object} file File model instance.
+ * @param {object} [format] Export format descriptor. Defaults to `default`.
  * @returns {Promise<Record<string, object>>} Documents keyed by locale filename.
  */
-async function exportAllLocales(file) {
+async function exportAllLocales(file, format) {
   const keys = await loadTranslationKeys(file.id);
-  return buildAllLocaleDocuments(keys);
+  return buildAllLocaleDocuments(keys, format);
 }
 
 /**
@@ -162,20 +164,22 @@ async function exportAllLocales(file) {
  * One archive rather than one download per language, because a project with a
  * dozen locales is a dozen clicks and a dozen chances to miss one. The entry
  * names are the same locale filenames a single download produces, so unpacking
- * the archive and downloading each locale by hand give identical trees.
+ * the archive and downloading each locale by hand give identical trees, in
+ * whichever format was asked for.
  *
  * @param {object} file File model instance.
+ * @param {object} [format] Export format descriptor. Defaults to `default`.
  * @returns {Promise<{filename: string, archive: Buffer, entries: string[]}>}
  * @throws {BadRequestError} When the file has nothing to export yet.
  */
-async function exportArchive(file) {
+async function exportArchive(file, format) {
   const keys = await loadTranslationKeys(file.id);
 
   if (keys.length === 0) {
     throw new BadRequestError('This file has no translations to download yet.');
   }
 
-  const documents = buildAllLocaleDocuments(keys);
+  const documents = buildAllLocaleDocuments(keys, format);
   const entries = Object.entries(documents).map(([name, document]) => ({
     name,
     content: `${JSON.stringify(document, null, 2)}\n`,
