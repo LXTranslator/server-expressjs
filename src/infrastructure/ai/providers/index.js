@@ -3,6 +3,7 @@
 const mock = require('./mock');
 const openai = require('./openai');
 const anthropic = require('./anthropic');
+const openrouter = require('./openrouter');
 
 /**
  * Fixed provider registry.
@@ -15,6 +16,7 @@ const PROVIDERS = Object.freeze({
   [mock.name]: mock,
   [openai.name]: openai,
   [anthropic.name]: anthropic,
+  [openrouter.name]: openrouter,
 });
 
 /**
