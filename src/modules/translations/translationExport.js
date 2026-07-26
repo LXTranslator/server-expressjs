@@ -1,13 +1,18 @@
 'use strict';
 
-const { expandTranslationTree } = require('../../core/jsonTree');
+const { expandTranslationTree, FORBIDDEN_KEYS } = require('../../core/jsonTree');
 const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
+const { DEFAULT_FORMAT } = require('../exportFormats/exportFormat.definitions');
 
 /**
  * Export format for generated locale files.
  *
- * Every leaf carries both the translated string and the 36 character
- * fingerprint of the English master text it was produced from:
+ * The shape of a document is chosen by a format descriptor, which belongs to
+ * the owning namespace. Two descriptors ship with the application.
+ *
+ * `default`, the original shape, gives every leaf both the translated string
+ * and the 36 character fingerprint of the English master text it was produced
+ * from:
  *
  * ```json
  * {
@@ -23,9 +28,57 @@ const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file'
  * English source changed and the translation needs revisiting. Without it, a
  * changed source string would silently keep its old translation.
  *
- * Nesting is preserved. A key stored as `greeting.hello` is emitted as
- * `{"greeting": {"hello": {...}}}`, matching the shape that was uploaded.
+ * `key_value` emits the bare string instead:
+ *
+ * ```json
+ * { "hello": "สวัสดี" }
+ * ```
+ *
+ * which is what a localization library reads directly, at the cost of carrying
+ * no fingerprint.
+ *
+ * Nesting is preserved in both. A key stored as `greeting.hello` is emitted as
+ * `{"greeting": {"hello": ...}}`, matching the shape that was uploaded. A
+ * format may turn `nested` off, which emits the dotted path as one key instead.
  */
+
+/**
+ * Builds one leaf value in the shape a format asks for.
+ *
+ * A null prototype is used for an object leaf so a field name can never reach
+ * `Object.prototype`, even though the name was validated before it was stored.
+ *
+ * @param {object} format Format descriptor.
+ * @param {string} text Translated or master string.
+ * @param {string} hash Fingerprint of the English master text.
+ * @returns {string|object} Leaf value.
+ */
+function buildLeafValue(format, text, hash) {
+  if (format.leafShape === 'STRING') return text;
+
+  const leaf = Object.create(null);
+  leaf[format.valueField] = text;
+  if (format.hashField !== null && format.hashField !== undefined) {
+    leaf[format.hashField] = hash;
+  }
+  return leaf;
+}
+
+/**
+ * Builds a document that keeps each dotted path as a single key.
+ *
+ * @param {Array<{keyName: string, value: *}>} entries Flattened entries.
+ * @returns {object} Flat document.
+ */
+function buildFlatDocument(entries) {
+  const root = Object.create(null);
+  for (const { keyName, value } of entries) {
+    if (FORBIDDEN_KEYS.has(keyName)) continue;
+    root[keyName] = value;
+  }
+  // Round tripping through JSON drops the null prototype without losing data.
+  return JSON.parse(JSON.stringify(root));
+}
 
 /**
  * Builds the export document for one locale.
@@ -33,9 +86,10 @@ const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file'
  * @param {object} params Export parameters.
  * @param {Array<object>} params.translationKeys Keys with their translations loaded.
  * @param {string} params.langCode Locale to export.
- * @returns {object} Nested export document.
+ * @param {object} [params.format] Format descriptor. Defaults to `default`.
+ * @returns {object} Export document.
  */
-function buildLocaleDocument({ translationKeys, langCode }) {
+function buildLocaleDocument({ translationKeys, langCode, format = DEFAULT_FORMAT }) {
   const entries = [];
 
   for (const key of translationKeys) {
@@ -44,7 +98,7 @@ function buildLocaleDocument({ translationKeys, langCode }) {
     if (langCode === MASTER_LANG_CODE) {
       entries.push({
         keyName: key.keyName,
-        value: { value: key.originalText, hash: key.textHash },
+        value: buildLeafValue(format, key.originalText, key.textHash),
       });
       continue;
     }
@@ -57,11 +111,11 @@ function buildLocaleDocument({ translationKeys, langCode }) {
 
     entries.push({
       keyName: key.keyName,
-      value: { value: translation.translatedText, hash: key.textHash },
+      value: buildLeafValue(format, translation.translatedText, key.textHash),
     });
   }
 
-  return expandTranslationTree(entries);
+  return format.nested ? expandTranslationTree(entries) : buildFlatDocument(entries);
 }
 
 /**
@@ -84,12 +138,13 @@ function listAvailableLocales(translationKeys) {
  * Builds every locale document for a file.
  *
  * @param {Array<object>} translationKeys Keys with their translations loaded.
+ * @param {object} [format] Format descriptor. Defaults to `default`.
  * @returns {Record<string, object>} Documents keyed by locale file name.
  */
-function buildAllLocaleDocuments(translationKeys) {
+function buildAllLocaleDocuments(translationKeys, format = DEFAULT_FORMAT) {
   const documents = {};
   for (const langCode of listAvailableLocales(translationKeys)) {
-    documents[`${langCode}.json`] = buildLocaleDocument({ translationKeys, langCode });
+    documents[`${langCode}.json`] = buildLocaleDocument({ translationKeys, langCode, format });
   }
   return documents;
 }

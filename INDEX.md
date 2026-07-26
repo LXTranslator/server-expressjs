@@ -63,6 +63,7 @@ Framework free primitives shared by every layer.
 | [`src/core/zip.js`](src/core/zip.js) | Minimal in memory ZIP writer for the archive download. |
 | [`src/core/jsonTree.js`](src/core/jsonTree.js) | JSON flattening and expansion with prototype pollution guards. |
 | [`src/core/filename.js`](src/core/filename.js) | Upload filename sanitisation and path containment. |
+| [`src/core/placeholders.js`](src/core/placeholders.js) | Interpolation token extraction and comparison. |
 
 ### Infrastructure
 
@@ -81,6 +82,7 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/translationKey.js`](src/infrastructure/database/models/translationKey.js) | Master strings and their fingerprints. |
 | [`src/infrastructure/database/models/translation.js`](src/infrastructure/database/models/translation.js) | Per language translated strings. |
 | [`src/infrastructure/database/models/authToken.js`](src/infrastructure/database/models/authToken.js) | Single use short lived token ledger. |
+| [`src/infrastructure/database/models/exportFormat.js`](src/infrastructure/database/models/exportFormat.js) | Download shapes owned by a namespace. |
 | [`src/infrastructure/database/models/accountApiKey.js`](src/infrastructure/database/models/accountApiKey.js) | Encrypted namespace level AI credentials with platform, model and priority order. |
 | [`src/infrastructure/database/models/aiChatLog.js`](src/infrastructure/database/models/aiChatLog.js) | Assistant conversation history, token usage and embeddings. |
 | [`src/infrastructure/crypto/secretBox.js`](src/infrastructure/crypto/secretBox.js) | AES 256 GCM encryption for stored credentials. |
@@ -127,8 +129,6 @@ One directory per business capability.
 | [`src/modules/namespaces/namespace.service.js`](src/modules/namespaces/namespace.service.js) | Namespace, project and file access resolution. |
 | [`src/modules/orgs/org.service.js`](src/modules/orgs/org.service.js) | Organization creation, profile and membership. |
 | [`src/modules/orgs/org.schemas.js`](src/modules/orgs/org.schemas.js) | Organization request schemas. |
-| [`src/modules/accountKeys/accountKey.service.js`](src/modules/accountKeys/accountKey.service.js) | Namespace AI credentials and the organization to personal fallback chain. |
-| [`src/modules/accountKeys/accountKey.schemas.js`](src/modules/accountKeys/accountKey.schemas.js) | Namespace AI credential request schemas. |
 | [`src/modules/projects/project.routes.js`](src/modules/projects/project.routes.js) | Project, credential and upload routes. |
 | [`src/modules/projects/project.service.js`](src/modules/projects/project.service.js) | Project settings and credential management. |
 | [`src/modules/projects/project.schemas.js`](src/modules/projects/project.schemas.js) | Project request schemas. |
@@ -137,7 +137,13 @@ One directory per business capability.
 | [`src/modules/files/file.schemas.js`](src/modules/files/file.schemas.js) | Upload and export request schemas. |
 | [`src/modules/translations/translation.service.js`](src/modules/translations/translation.service.js) | Editor data, manual edits and export. |
 | [`src/modules/translations/translationExport.js`](src/modules/translations/translationExport.js) | Value and hash export format builder. |
+| [`src/modules/translations/translationConsistency.js`](src/modules/translations/translationConsistency.js) | On demand master to translation consistency report. |
 | [`src/modules/translations/translation.schemas.js`](src/modules/translations/translation.schemas.js) | Translation edit request schemas. |
+| [`src/modules/accountKeys/accountKey.service.js`](src/modules/accountKeys/accountKey.service.js) | Namespace AI credentials and the organization to personal fallback chain. |
+| [`src/modules/accountKeys/accountKey.schemas.js`](src/modules/accountKeys/accountKey.schemas.js) | Namespace AI credential request schemas. |
+| [`src/modules/exportFormats/exportFormat.definitions.js`](src/modules/exportFormats/exportFormat.definitions.js) | Built in format descriptors and field name rules. |
+| [`src/modules/exportFormats/exportFormat.service.js`](src/modules/exportFormats/exportFormat.service.js) | Namespace owned export format management. |
+| [`src/modules/exportFormats/exportFormat.schemas.js`](src/modules/exportFormats/exportFormat.schemas.js) | Export format request schemas. |
 
 ### Routing
 
@@ -172,9 +178,11 @@ Off thread execution of the translation pipeline.
 | [`tests/fileGrowth.test.js`](tests/fileGrowth.test.js) | Adding languages and merging new keys into an existing file. |
 | [`tests/locale.test.js`](tests/locale.test.js) | Locale code acceptance across the whole supported catalogue. |
 | [`tests/archive.test.js`](tests/archive.test.js) | ZIP writer round trips, entry name safety and the archive download. |
+| [`tests/exportFormat.test.js`](tests/exportFormat.test.js) | Built in and namespace owned export formats, and the download shapes they produce. |
+| [`tests/consistency.test.js`](tests/consistency.test.js) | Placeholder extraction, single key updates, partial retranslation and the consistency check. |
+| [`tests/accountAi.test.js`](tests/accountAi.test.js) | Namespace AI credentials, the organization to personal fallback chain and the chat log table. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
-| [`tests/accountAi.test.js`](tests/accountAi.test.js) | Namespace AI credentials, the organization to personal fallback chain and the chat log table. |
 
 ## Agent Configuration
 
