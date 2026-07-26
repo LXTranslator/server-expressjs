@@ -60,6 +60,7 @@ Framework free primitives shared by every layer.
 | [`src/core/asyncHandler.js`](src/core/asyncHandler.js) | Async route wrapper forwarding rejections to Express. |
 | [`src/core/textHash.js`](src/core/textHash.js) | Deterministic 36 character source fingerprint. |
 | [`src/core/reservedIdentifiers.js`](src/core/reservedIdentifiers.js) | Namespace identifiers the client routes to itself. |
+| [`src/core/zip.js`](src/core/zip.js) | Minimal in memory ZIP writer for the archive download. |
 | [`src/core/jsonTree.js`](src/core/jsonTree.js) | JSON flattening and expansion with prototype pollution guards. |
 | [`src/core/filename.js`](src/core/filename.js) | Upload filename sanitisation and path containment. |
 
@@ -164,6 +165,8 @@ Off thread execution of the translation pipeline.
 | [`tests/access.test.js`](tests/access.test.js) | Object level authorization and role tests. |
 | [`tests/organization.test.js`](tests/organization.test.js) | Organization creation, availability and deletion tests. |
 | [`tests/project.test.js`](tests/project.test.js) | Project name scoping, identifier sequencing and malformed identifier tests. |
+| [`tests/fileGrowth.test.js`](tests/fileGrowth.test.js) | Adding languages and merging new keys into an existing file. |
+| [`tests/archive.test.js`](tests/archive.test.js) | ZIP writer round trips, entry name safety and the archive download. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
 

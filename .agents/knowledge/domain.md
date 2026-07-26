@@ -42,6 +42,13 @@ Breaking any of these is a defect, not a design choice.
    translations become visibly stale.
 7. **The master locale is never a target.** It is the source of the fan out
    step, so it is filtered out of the target list.
+8. **A file grows, it does not get rewritten.** Adding a language translates the
+   existing keys into that language alone. Merging a dropped document adds only
+   the key names the file lacks; a key it already holds is skipped whole, master
+   text and translations included, even when the document carries a different
+   value for it. Both rules exist so that later work never costs earlier work,
+   and both are enforced in the worker so a skipped key is never sent to a
+   provider at all.
 
 ## Pipeline order
 

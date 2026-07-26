@@ -4,11 +4,15 @@ const express = require('express');
 const asyncHandler = require('../../core/asyncHandler');
 const { validate, validated } = require('../../middleware/validate');
 const { authenticate } = require('../../middleware/authenticate');
+const { uploadLimiter } = require('../../middleware/rateLimit');
+const { uploadTranslationFile } = require('../../middleware/upload');
+const { BadRequestError } = require('../../core/errors');
 const namespaceService = require('../namespaces/namespace.service');
 const fileService = require('./file.service');
 const translationService = require('../translations/translation.service');
 const translationSchemas = require('../translations/translation.schemas');
 const fileSchemas = require('./file.schemas');
+const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 
 const router = express.Router();
 
@@ -84,14 +88,28 @@ router.patch(
 /**
  * Downloads generated locale files.
  *
- * With `?lang=` a single document is returned as an attachment; without it,
- * every locale is returned in one JSON envelope.
+ * Three shapes from one endpoint: `?lang=` returns that locale as a JSON
+ * attachment, `?format=zip` returns every locale in one archive, and neither
+ * returns every locale in a JSON envelope for the editor to render.
  */
 router.get(
   '/:fileId/download',
   validate(fileSchemas.exportQuerySchema, 'query'),
   asyncHandler(async (req, res) => {
-    const { lang } = validated(req, 'query');
+    const { lang, format } = validated(req, 'query');
+
+    if (format === 'zip') {
+      const { filename, archive } = await translationService.exportArchive(req.file);
+
+      // The name is a constant, so nothing caller controlled reaches the
+      // header. Length is set explicitly because the body is a Buffer and the
+      // client shows progress for a download that declares its size.
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', archive.length);
+      res.send(archive);
+      return;
+    }
 
     if (lang === undefined) {
       const documents = await translationService.exportAllLocales(req.file);
@@ -112,6 +130,70 @@ router.get(
   }),
 );
 
+/**
+ * Adds target languages to a file.
+ *
+ * Existing locales are left alone, so this costs provider quota for the new
+ * languages only and cannot disturb translations already reviewed.
+ */
+router.post(
+  '/:fileId/languages',
+  validate(fileSchemas.addLanguagesSchema),
+  asyncHandler(async (req, res) => {
+    if (req.namespace.type === 'ORG') {
+      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+    }
+
+    const { file, added } = await fileService.addTargetLanguages({
+      file: req.file,
+      project: req.project,
+      targetLangs: req.body.target_langs,
+    });
+
+    // 202: the record is updated, the translating continues on a worker and the
+    // client polls the file's status.
+    res.status(202).json({ data: { file: file.toPublicJson(), added } });
+  }),
+);
+
+/**
+ * Merges a dropped document, adding only the keys the file does not have.
+ *
+ * A key already present is skipped entirely: its master text, its translations
+ * and any manual correction survive untouched, and it costs nothing to send.
+ */
+router.post(
+  '/:fileId/keys',
+  uploadLimiter,
+  (req, res, next) => {
+    // Multer writes the multipart upload to req.file, which in this router is
+    // already the File record set by the resolver above. Move the record aside
+    // before that happens, or the handler authorises one thing and acts on
+    // another.
+    req.fileRecord = req.file;
+    next();
+  },
+  uploadTranslationFile,
+  asyncHandler(async (req, res) => {
+    if (req.namespace.type === 'ORG') {
+      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
+    }
+    if (!req.file) {
+      throw new BadRequestError('Attach a JSON translation file.');
+    }
+
+    const { file, existingKeyCount } = await fileService.mergeKeys({
+      file: req.fileRecord,
+      project: req.project,
+      upload: req.file,
+    });
+
+    res.status(202).json({
+      data: { file: file.toPublicJson(), existing_key_count: existingKeyCount },
+    });
+  }),
+);
+
 /** Re-runs the pipeline for a file that failed. */
 router.post(
   '/:fileId/reprocess',
@@ -119,15 +201,20 @@ router.post(
     if (req.namespace.type === 'ORG') {
       namespaceService.assertRole(req.namespaceRole, 'ADMIN');
     }
-    const data = await translationService.getEditorData(req.file);
+    // Rebuilt from the stored master text so a rerun does not depend on the
+    // original upload still being on disk, and because the master carries every
+    // correction made in the editor since.
+    const { content } = await fileService.buildMasterDocument(req.file.id);
 
-    // Rebuild the source document from the stored master text so a rerun does
-    // not depend on the original upload still being on disk.
-    const content = JSON.stringify(
-      Object.fromEntries(data.keys.map((key) => [key.key_name, key.original_text])),
-    );
-
-    fileService.processFile({ file: req.file, project: req.project, content });
+    // That text is English whatever the file was uploaded in. Passing the
+    // file's own source language here would translate English to English again,
+    // spending quota to make the master worse.
+    fileService.processFile({
+      file: req.file,
+      project: req.project,
+      content,
+      sourceLang: MASTER_LANG_CODE,
+    });
     res.status(202).json({ data: { file: req.file.toPublicJson() } });
   }),
 );

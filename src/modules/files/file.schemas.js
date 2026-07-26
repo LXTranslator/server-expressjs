@@ -43,8 +43,28 @@ const uploadSchema = z
   })
   .strict();
 
+/**
+ * Export query.
+ *
+ * `format=zip` returns every locale in one archive. It is a separate field
+ * rather than a separate route so there is one download endpoint to authorise
+ * and one place where the locale filter is applied.
+ */
 const exportQuerySchema = z
-  .object({ lang: langCodeSchema.optional() })
+  .object({
+    lang: langCodeSchema.optional(),
+    format: z.enum(['json', 'zip']).optional(),
+  })
   .strict();
 
-module.exports = { uploadSchema, exportQuerySchema, langCodeSchema };
+/** Locales to add to a file that already exists. */
+const addLanguagesSchema = z
+  .object({
+    target_langs: z
+      .array(langCodeSchema)
+      .min(1, 'Select at least one language to add.')
+      .max(50, 'Add 50 languages or fewer at a time.'),
+  })
+  .strict();
+
+module.exports = { uploadSchema, exportQuerySchema, addLanguagesSchema, langCodeSchema };

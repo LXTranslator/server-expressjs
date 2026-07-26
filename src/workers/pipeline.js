@@ -89,6 +89,7 @@ async function translateAll({ texts, sourceLang, targetLang, job, onAttempt }) {
  * @param {string} job.provider Provider identifier.
  * @param {string} job.model Model identifier.
  * @param {Array<object>} job.keys Decrypted credentials sorted by priority.
+ * @param {string[]} [job.skipKeyNames] Keys already held, to be left untouched.
  * @param {Function} [onAttempt] Observer for credential telemetry.
  * @returns {Promise<object>} Master keys and per locale translations.
  */
@@ -100,12 +101,42 @@ async function runTranslationPipeline(job, onAttempt) {
     throw new BadRequestError(`The uploaded file is not valid JSON: ${error.message}`);
   }
 
-  const leaves = flattenTranslationTree(parsed, {
+  const allLeaves = flattenTranslationTree(parsed, {
     maxDepth: config.upload.maxJsonDepth,
     maxKeys: config.upload.maxTranslationKeys,
   });
 
+  /*
+   * Dropping a fuller document onto an existing file should cost only the new
+   * strings. Filtering here rather than in the caller is what makes that true:
+   * a skipped key is never sent to a provider, so merging a file of a thousand
+   * keys with two new ones is two strings of quota, not a thousand. It also
+   * keeps the existing translations, including manual corrections, out of reach
+   * of this run entirely.
+   *
+   * The comparison is on key name only. A key whose master text changed is
+   * still skipped, because editing an existing string is the editor's job and
+   * an upload must not silently overwrite a correction.
+   */
+  const known = new Set(Array.isArray(job.skipKeyNames) ? job.skipKeyNames : []);
+  const leaves = known.size === 0 ? allLeaves : allLeaves.filter((leaf) => !known.has(leaf.keyName));
+  const skippedKeyCount = allLeaves.length - leaves.length;
+
   const sourceLang = job.sourceLang || MASTER_LANG_CODE;
+
+  // Nothing new: return the empty result rather than calling a provider with an
+  // empty batch, which every adapter would reject.
+  if (leaves.length === 0) {
+    return {
+      sourceLang,
+      masterLang: MASTER_LANG_CODE,
+      keys: [],
+      translations: {},
+      keyCount: 0,
+      skippedKeyCount,
+    };
+  }
+
   const isMasterUpload = sourceLang === MASTER_LANG_CODE;
 
   // Step 2: normalise to the English master.
@@ -157,6 +188,7 @@ async function runTranslationPipeline(job, onAttempt) {
     keys,
     translations,
     keyCount: keys.length,
+    skippedKeyCount,
   };
 }
 

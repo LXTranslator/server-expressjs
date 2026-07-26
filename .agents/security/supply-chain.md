@@ -47,6 +47,20 @@ have caught up.
 6. **Pin the base image by release tag, and prefer a digest** for production
    builds so a rebuild cannot silently pull different bytes.
 
+## Written here rather than installed
+
+`src/core/zip.js` builds the archive download. It is roughly two hundred lines
+against a dependency that would pull a tree of its own, and the hard part,
+DEFLATE, already ships in Node's `zlib`. The archive this application produces
+is the simple case of the format: a few small text entries, written in one pass,
+held in memory.
+
+It refuses rather than guesses on everything it does not implement, including
+ZIP64 sizes, entry counts above 65535, duplicate names and any entry name that
+is absolute, traverses upward or carries a null byte. `tests/archive.test.js`
+reads the bytes back the way an extractor does and recomputes every checksum,
+so a format defect fails the suite rather than somebody's download.
+
 ## When adding a dependency
 
 - Check its download volume, release recency and open advisory count.
