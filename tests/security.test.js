@@ -430,6 +430,18 @@ describe('credential exposure', () => {
     expect(decryptSecret(row.apiKey)).toBe(secret);
   });
 
+  it('leaves the encrypted column out of a query that does not ask for it', async () => {
+    // The scope is the defence that makes a generic findAll safe by default,
+    // and it only works if it names the attribute rather than the column.
+    const { ProjectApiKey } = require('../src/infrastructure/database/models');
+
+    const row = await ProjectApiKey.findOne({ where: { projectId: project.id } });
+
+    expect(row.apiKey).toBeUndefined();
+    expect(Object.keys(row.toJSON())).not.toContain('apiKey');
+    expect(Object.keys(row.toJSON())).not.toContain('api_key');
+  });
+
   it('keeps priority order for the fallback chain', async () => {
     const fresh = await createProject(app, token, 'keys_user', { name: 'ordered_project' });
 

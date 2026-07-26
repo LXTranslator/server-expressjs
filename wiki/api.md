@@ -358,6 +358,98 @@ above, and nobody may grant a role above their own.
 Returns **204**. Members may remove themselves; removing anyone else requires
 `ADMIN`. The last `OWNER` cannot be removed or demoted.
 
+## Account AI credentials
+
+Credentials paying for whatever a namespace does outside a single project, which
+today means the assistant. Held separately from a project's translation
+credentials, so an organization can fund the assistant without exposing the keys
+its pipelines use, or the reverse.
+
+All routes require authentication and, inside an organization, `ADMIN` or above.
+Reading is as privileged as writing here: the list is a statement about the
+organization's spending.
+
+**No endpoint returns a stored key.** Responses identify a credential by label
+and its last four characters.
+
+### `GET /namespaces/:namespace/settings/ai_keys`
+
+```json
+{
+  "data": {
+    "keys": [
+      {
+        "id": "...",
+        "provider": "openrouter",
+        "chat_model": "openai/gpt-4o-mini",
+        "label": "organization primary",
+        "masked_key": "****7890",
+        "priority_order": 1,
+        "is_active": true,
+        "last_used_at": null,
+        "last_error_at": null,
+        "last_error_reason": null
+      }
+    ]
+  }
+}
+```
+
+### `POST /namespaces/:namespace/settings/ai_keys`
+
+```json
+{
+  "provider": "openrouter",
+  "chat_model": "openai/gpt-4o-mini",
+  "api_key": "your_provider_api_key",
+  "label": "organization primary",
+  "priority_order": 1,
+  "is_active": true
+}
+```
+
+Returns **201**. Unlike a project credential, each row names its own platform
+and model, because an account has no record to take them from. `provider` must
+be in the registry `GET /providers` lists and `chat_model` must be one of that
+platform's models, otherwise **400**. `chat_model` defaults to the platform's
+own default. `priority_order` defaults to the end of the chain. An account may
+hold 20 credentials.
+
+### `PATCH /namespaces/:namespace/settings/ai_keys/:keyId`
+
+Any of `provider`, `chat_model`, `api_key`, `label`, `priority_order`,
+`is_active`. Changing the platform without naming a model falls back to that
+platform's default.
+
+### `POST /namespaces/:namespace/settings/ai_keys/reorder`
+
+```json
+{ "ordered_key_ids": ["id_three", "id_one", "id_two"] }
+```
+
+Must list every key on the account exactly once. This is the order the fallback
+chain will walk.
+
+### `DELETE /namespaces/:namespace/settings/ai_keys/:keyId`
+
+Returns **204**.
+
+### How the chain is walked
+
+When a person acts inside an organization, the organization's credentials are
+tried first, in their priority order, and that person's own personal
+credentials follow. A revoked, throttled or exhausted organization key falls
+through to the personal one rather than failing the request.
+
+The chain only ever contains the caller's own personal keys. No request can
+reach a credential belonging to another member, and a personal namespace is
+simply the chain with no organization ahead of it.
+
+With no credential configured anywhere, and outside production, the built in
+development credential answers, so the assistant works on a clean clone.
+
+---
+
 ### `GET /namespaces/:namespace/projects`
 
 Lists the namespace's projects.

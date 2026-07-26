@@ -81,11 +81,13 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/translationKey.js`](src/infrastructure/database/models/translationKey.js) | Master strings and their fingerprints. |
 | [`src/infrastructure/database/models/translation.js`](src/infrastructure/database/models/translation.js) | Per language translated strings. |
 | [`src/infrastructure/database/models/authToken.js`](src/infrastructure/database/models/authToken.js) | Single use short lived token ledger. |
+| [`src/infrastructure/database/models/accountApiKey.js`](src/infrastructure/database/models/accountApiKey.js) | Encrypted namespace level AI credentials with platform, model and priority order. |
+| [`src/infrastructure/database/models/aiChatLog.js`](src/infrastructure/database/models/aiChatLog.js) | Assistant conversation history, token usage and embeddings. |
 | [`src/infrastructure/crypto/secretBox.js`](src/infrastructure/crypto/secretBox.js) | AES 256 GCM encryption for stored credentials. |
 | [`src/infrastructure/email/mailer.js`](src/infrastructure/email/mailer.js) | Console and SMTP mail transports. |
 | [`src/infrastructure/ai/providerError.js`](src/infrastructure/ai/providerError.js) | Provider failure categories driving the fallback chain. |
 | [`src/infrastructure/ai/prompt.js`](src/infrastructure/ai/prompt.js) | Prompt construction and reply validation. |
-| [`src/infrastructure/ai/keyFallback.js`](src/infrastructure/ai/keyFallback.js) | Credential fallback executor. |
+| [`src/infrastructure/ai/keyFallback.js`](src/infrastructure/ai/keyFallback.js) | Credential fallback executor, shared by the pipeline and the account chain. |
 | [`src/infrastructure/ai/providers/index.js`](src/infrastructure/ai/providers/index.js) | Fixed provider registry. |
 | [`src/infrastructure/ai/providers/mock.js`](src/infrastructure/ai/providers/mock.js) | Offline provider for zero configuration runs. |
 | [`src/infrastructure/ai/providers/openai.js`](src/infrastructure/ai/providers/openai.js) | OpenAI chat completions adapter. |
@@ -125,6 +127,8 @@ One directory per business capability.
 | [`src/modules/namespaces/namespace.service.js`](src/modules/namespaces/namespace.service.js) | Namespace, project and file access resolution. |
 | [`src/modules/orgs/org.service.js`](src/modules/orgs/org.service.js) | Organization creation, profile and membership. |
 | [`src/modules/orgs/org.schemas.js`](src/modules/orgs/org.schemas.js) | Organization request schemas. |
+| [`src/modules/accountKeys/accountKey.service.js`](src/modules/accountKeys/accountKey.service.js) | Namespace AI credentials and the organization to personal fallback chain. |
+| [`src/modules/accountKeys/accountKey.schemas.js`](src/modules/accountKeys/accountKey.schemas.js) | Namespace AI credential request schemas. |
 | [`src/modules/projects/project.routes.js`](src/modules/projects/project.routes.js) | Project, credential and upload routes. |
 | [`src/modules/projects/project.service.js`](src/modules/projects/project.service.js) | Project settings and credential management. |
 | [`src/modules/projects/project.schemas.js`](src/modules/projects/project.schemas.js) | Project request schemas. |
@@ -170,6 +174,7 @@ Off thread execution of the translation pipeline.
 | [`tests/archive.test.js`](tests/archive.test.js) | ZIP writer round trips, entry name safety and the archive download. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
+| [`tests/accountAi.test.js`](tests/accountAi.test.js) | Namespace AI credentials, the organization to personal fallback chain and the chat log table. |
 
 ## Agent Configuration
 

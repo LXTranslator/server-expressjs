@@ -10,6 +10,8 @@ const defineFile = require('./file');
 const defineTranslationKey = require('./translationKey');
 const defineTranslation = require('./translation');
 const defineAuthToken = require('./authToken');
+const defineAccountApiKey = require('./accountApiKey');
+const defineAiChatLog = require('./aiChatLog');
 
 const Account = defineAccount(sequelize);
 const OrgMember = defineOrgMember(sequelize);
@@ -19,6 +21,8 @@ const File = defineFile(sequelize);
 const TranslationKey = defineTranslationKey(sequelize);
 const Translation = defineTranslation(sequelize);
 const AuthToken = defineAuthToken(sequelize);
+const AccountApiKey = defineAccountApiKey(sequelize);
+const AiChatLog = defineAiChatLog(sequelize);
 
 /*
  * Associations.
@@ -105,6 +109,43 @@ Translation.belongsTo(TranslationKey, {
   foreignKey: { name: 'translationKeyId', field: 'translation_key_id' },
 });
 
+// Namespace to its own AI credentials, which pay for whatever the account does
+// outside a single project.
+Account.hasMany(AccountApiKey, {
+  as: 'accountApiKeys',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AccountApiKey.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
+/*
+ * Chat logs hang off two accounts at once: the namespace the conversation
+ * happened in, and the person who typed the prompt. Both cascade, so deleting
+ * either an organization or a member removes the rows that name them.
+ */
+Account.hasMany(AiChatLog, {
+  as: 'chatLogs',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AiChatLog.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
+Account.hasMany(AiChatLog, {
+  as: 'authoredChatLogs',
+  foreignKey: { name: 'userAccountId', field: 'user_id' },
+  onDelete: 'CASCADE',
+});
+AiChatLog.belongsTo(Account, {
+  as: 'author',
+  foreignKey: { name: 'userAccountId', field: 'user_id' },
+});
+
 // Account to short lived tokens.
 Account.hasMany(AuthToken, {
   as: 'authTokens',
@@ -126,4 +167,6 @@ module.exports = {
   TranslationKey,
   Translation,
   AuthToken,
+  AccountApiKey,
+  AiChatLog,
 };
