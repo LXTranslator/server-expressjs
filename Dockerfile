@@ -12,14 +12,26 @@ FROM node:22-bookworm-slim AS dependencies
 
 WORKDIR /app
 
+# Toolchain for compiling the SQLite driver below. It exists in this stage only,
+# so nothing of it reaches the runtime layer.
+RUN apt-get update \
+  && apt-get install --no-install-recommends -y python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
 # Copied on their own so the dependency layer is reused whenever only source
 # files change.
 COPY package.json package-lock.json ./
 
 # `npm ci` installs exactly what the lockfile pins, which is what makes the
 # build reproducible and blocks an unexpected transitive upgrade.
+#
+# sqlite3 publishes prebuilt binaries built against a newer glibc than this base
+# image carries, so accepting one produces an image that builds cleanly and then
+# dies at boot on `GLIBC_2.38 not found`. Compiling the addon here links it
+# against the glibc of the image it will actually run on, which is the only way
+# the two stay in step across a base image change.
 RUN npm ci --omit=dev --ignore-scripts \
-  && npm rebuild sqlite3 --build-from-source=false \
+  && npm rebuild sqlite3 --build-from-source \
   && npm cache clean --force
 
 
