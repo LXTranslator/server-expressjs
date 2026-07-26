@@ -40,7 +40,8 @@ module.exports = {
     'anthropic/claude-sonnet-4.5',
     'google/gemini-2.5-flash',
     'meta-llama/llama-3.3-70b-instruct',
-    'deepseek/deepseek-chat-v3.1',
+    'deepseek/deepseek-v4-flash',
+    'deepseek/deepseek-v4-pro',
   ],
   requiresNetwork: true,
 
