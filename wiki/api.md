@@ -95,6 +95,13 @@ Provider and model catalogue for the project settings page. No authentication.
         "default_model": "claude-opus-5",
         "models": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
         "requires_network": true
+      },
+      {
+        "name": "openrouter",
+        "label": "OpenRouter",
+        "default_model": "openai/gpt-4o-mini",
+        "models": ["openai/gpt-4o-mini", "anthropic/claude-sonnet-4.5"],
+        "requires_network": true
       }
     ],
     "default_provider": "mock",
@@ -102,6 +109,12 @@ Provider and model catalogue for the project settings page. No authentication.
   }
 }
 ```
+
+`mock`, `openai`, `anthropic` and `openrouter` are the whole registry. Because
+OpenRouter brokers several vendors through one credential, its model names carry
+a vendor prefix; a project set to `openrouter` can change vendor by changing the
+model, without a new key. `ai_model` must be one of the names the catalogue
+lists for the chosen provider, or the request is **400**.
 
 ---
 

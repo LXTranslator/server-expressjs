@@ -89,6 +89,7 @@ Adapters for everything outside the process.
 | [`src/infrastructure/ai/providers/mock.js`](src/infrastructure/ai/providers/mock.js) | Offline provider for zero configuration runs. |
 | [`src/infrastructure/ai/providers/openai.js`](src/infrastructure/ai/providers/openai.js) | OpenAI chat completions adapter. |
 | [`src/infrastructure/ai/providers/anthropic.js`](src/infrastructure/ai/providers/anthropic.js) | Anthropic messages adapter. |
+| [`src/infrastructure/ai/providers/openrouter.js`](src/infrastructure/ai/providers/openrouter.js) | OpenRouter broker adapter reaching several vendors on one credential. |
 
 ### Middleware
 
@@ -163,6 +164,7 @@ Off thread execution of the translation pipeline.
 | [`tests/access.test.js`](tests/access.test.js) | Object level authorization and role tests. |
 | [`tests/organization.test.js`](tests/organization.test.js) | Organization creation, availability and deletion tests. |
 | [`tests/project.test.js`](tests/project.test.js) | Project name scoping, identifier sequencing and malformed identifier tests. |
+| [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
 
 ## Agent Configuration
