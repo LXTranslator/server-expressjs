@@ -66,6 +66,7 @@ RATE_LIMIT_GLOBAL_MAX=300
 RATE_LIMIT_AUTH_MAX=10
 RATE_LIMIT_AVAILABILITY_MAX=20
 RATE_LIMIT_UPLOAD_MAX=20
+RATE_LIMIT_CHAT_MAX=30
 
 # Uploads
 UPLOAD_STORAGE_DIR=./storage/uploads
@@ -80,6 +81,14 @@ AI_DEFAULT_API_KEY=your_default_ai_key
 AI_REQUEST_TIMEOUT_MS=30000
 AI_MAX_ATTEMPTS_PER_KEY=2
 AI_BATCH_SIZE=25
+
+# The assistant
+AGENTS_CHAT_REPEAT=5
+AGENTS_CHAT_HISTORY_TURNS=10
+AGENTS_CHAT_MAX_PROMPT=8000
+AGENTS_CHAT_LOG_BUFFER=500
+AGENTS_CHAT_LOG_RETRY_MS=5000
+AGENTS_CHAT_EMBED_BATCH=50
 
 # Workers
 WORKER_POOL_SIZE=2
@@ -187,6 +196,7 @@ required for a development or test run.
 | `RATE_LIMIT_AUTH_MAX` | no | `10` | Credential endpoint requests per window. |
 | `RATE_LIMIT_AVAILABILITY_MAX` | no | `20` | Availability probe requests per window. |
 | `RATE_LIMIT_UPLOAD_MAX` | no | `20` | Uploads per window. |
+| `RATE_LIMIT_CHAT_MAX` | no | `30` | Assistant turns per window. One turn may be several provider calls. |
 | `UPLOAD_STORAGE_DIR` | no | `./storage/uploads` | Root for archived uploads. |
 | `UPLOAD_MAX_BYTES` | no | `2097152` | Maximum upload size in bytes. |
 | `UPLOAD_MAX_JSON_DEPTH` | no | `20` | Maximum nesting depth accepted. |
@@ -197,6 +207,12 @@ required for a development or test run.
 | `AI_REQUEST_TIMEOUT_MS` | no | `30000` | Per provider request timeout. |
 | `AI_MAX_ATTEMPTS_PER_KEY` | no | `2` | Retries per credential before moving on. |
 | `AI_BATCH_SIZE` | no | `25` | Strings per provider request. |
+| `AGENTS_CHAT_REPEAT` | no | `5` | Tool calls the assistant may make in one turn before it must answer. Every pass is a paid model call. |
+| `AGENTS_CHAT_HISTORY_TURNS` | no | `10` | Past exchanges replayed as context. This is what stops a long conversation from costing more with every message. |
+| `AGENTS_CHAT_MAX_PROMPT` | no | `8000` | Longest message accepted, in characters. |
+| `AGENTS_CHAT_LOG_BUFFER` | no | `500` | Chat logs held in memory while the database is unavailable. At the ceiling the oldest is dropped and logged. |
+| `AGENTS_CHAT_LOG_RETRY_MS` | no | `5000` | Delay before retrying a failed chat log write. |
+| `AGENTS_CHAT_EMBED_BATCH` | no | `50` | Rows one embedding backfill request may process. |
 | `WORKER_POOL_SIZE` | no | `2` | Translation worker threads. |
 | `WORKER_TASK_TIMEOUT_MS` | no | `300000` | Maximum duration of one job. |
 | `MAIL_TRANSPORT` | no | `console` outside production | `console` or `smtp`. |

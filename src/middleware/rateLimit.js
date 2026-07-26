@@ -71,4 +71,15 @@ const uploadLimiter = build({
   message: 'Too many uploads. Wait for the current files to finish processing.',
 });
 
-module.exports = { globalLimiter, authLimiter, availabilityLimiter, uploadLimiter };
+/**
+ * Assistant turns.
+ *
+ * One turn is not one provider call: the agent loop may take several passes,
+ * each of them paid, before it answers. The bucket is tight for that reason.
+ */
+const chatLimiter = build({
+  max: config.rateLimit.chatMax,
+  message: 'Too many assistant requests. Wait a moment before asking again.',
+});
+
+module.exports = { globalLimiter, authLimiter, availabilityLimiter, uploadLimiter, chatLimiter };

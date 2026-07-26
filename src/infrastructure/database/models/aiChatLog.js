@@ -103,6 +103,18 @@ module.exports = (sequelize) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      /**
+       * Which model produced the vector.
+       *
+       * Vectors from different models are not comparable, so a search has to
+       * know what it is ranking. It also tells a backfill which rows are
+       * genuinely missing a vector and which merely have an older one.
+       */
+      embeddingModel: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        field: 'embedding_model',
+      },
       createdAt: {
         type: DataTypes.DATE,
         allowNull: false,
@@ -140,6 +152,7 @@ module.exports = (sequelize) => {
       token_usage: this.tokenUsage,
       total_token_usage: this.totalTokenUsage,
       has_embedding: this.embedding !== null && this.embedding !== undefined,
+      embedding_model: this.embeddingModel,
       created_at: this.createdAt,
     };
   };

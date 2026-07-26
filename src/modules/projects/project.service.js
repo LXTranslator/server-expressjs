@@ -118,6 +118,40 @@ async function updateProject(project, input) {
 }
 
 /**
+ * Loads a project row by identifier, without any access check of its own.
+ *
+ * Only for callers that have already authorised the project through
+ * `namespace.service.js` and need the model instance rather than the client
+ * safe projection. Never call it with an identifier taken from a request.
+ *
+ * @param {number} projectId Project identifier.
+ * @returns {Promise<object|null>} Project model instance, or null.
+ */
+async function findProjectInstance(projectId) {
+  return Project.findByPk(projectId);
+}
+
+/**
+ * Replaces a project's description.
+ *
+ * Separate from {@link updateProject} because a description is the one project
+ * field that carries no consequence: changing it cannot invalidate a
+ * credential, retarget a provider or cost anything. Editing it should not have
+ * to travel through the settings payload that can do all three.
+ *
+ * @param {object} project Project model instance.
+ * @param {string} description New description. An empty string clears it.
+ * @returns {Promise<object>} Client safe project.
+ */
+async function updateProjectDescription(project, description) {
+  const value = typeof description === 'string' ? description.trim() : '';
+  await project.update({ description: value.length === 0 ? null : value });
+
+  logger.info('Project description updated.', { projectId: project.id });
+  return project.toPublicJson();
+}
+
+/**
  * Lists a project's credentials without exposing any key material.
  *
  * @param {string} projectId Project identifier.
@@ -237,6 +271,84 @@ async function removeApiKey(projectId, keyId) {
 }
 
 /**
+ * Adds target languages to every file of the named projects.
+ *
+ * The caller has already been authorised for the namespace, and every project
+ * is filtered by that namespace here, so an identifier belonging to somebody
+ * else matches nothing rather than being reported as forbidden.
+ *
+ * A project or file that cannot take the languages is skipped with a reason
+ * instead of failing the call. Adding Thai to twelve projects where two already
+ * have it should add it to ten, not refuse.
+ *
+ * @param {object} params Parameters.
+ * @param {string} params.namespaceAccountId Owning namespace.
+ * @param {Array<number|string>} [params.projectIds] Projects to change.
+ * @param {boolean} [params.allProjects] Use every project in the namespace.
+ * @param {string[]} params.targetLangs Locales to add.
+ * @returns {Promise<{applied: Array<object>, skipped: Array<object>}>}
+ * @throws {BadRequestError} When no project was named.
+ */
+async function addLanguagesAcrossProjects({
+  namespaceAccountId,
+  projectIds,
+  allProjects,
+  targetLangs,
+}) {
+  // Required lazily: the file service already depends on this module, so a
+  // top level require here would be a cycle.
+  const fileService = require('../files/file.service');
+  const { File } = require('../../infrastructure/database/models');
+
+  const projects = allProjects
+    ? await Project.findAll({ where: { namespaceAccountId } })
+    : await Project.findAll({ where: { namespaceAccountId, id: projectIds ?? [] } });
+
+  if (projects.length === 0) {
+    throw new BadRequestError('No project in this namespace matched that request.');
+  }
+
+  const applied = [];
+  const skipped = [];
+
+  for (const project of projects) {
+    const files = await File.findAll({ where: { projectId: project.id } });
+
+    if (files.length === 0) {
+      skipped.push({ project_id: project.id, reason: 'This project has no files yet.' });
+      continue;
+    }
+
+    for (const file of files) {
+      try {
+        const { added } = await fileService.addTargetLanguages({
+          file,
+          project,
+          targetLangs,
+        });
+        applied.push({
+          project_id: project.id,
+          file_id: file.id,
+          filename: file.filename,
+          added,
+        });
+      } catch (error) {
+        if (!(error instanceof BadRequestError)) throw error;
+        skipped.push({ project_id: project.id, file_id: file.id, reason: error.message });
+      }
+    }
+  }
+
+  logger.info('Languages added across projects.', {
+    namespaceAccountId,
+    projectCount: projects.length,
+    appliedCount: applied.length,
+  });
+
+  return { applied, skipped };
+}
+
+/**
  * Loads and decrypts the credentials a worker should try, in priority order.
  *
  * This is the only place a stored key is ever decrypted. When the project has
@@ -316,6 +428,9 @@ module.exports = {
   listProjects,
   createProject,
   updateProject,
+  findProjectInstance,
+  updateProjectDescription,
+  addLanguagesAcrossProjects,
   listApiKeys,
   addApiKey,
   updateApiKey,
