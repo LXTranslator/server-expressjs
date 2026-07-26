@@ -49,6 +49,7 @@ accounts ──┬─< org_members >── accounts          (organization membe
                           └─< files ──< translation_keys ──< translations
 
 accounts ──< auth_tokens                          (single use short lived tokens)
+accounts ──< export_formats                       (download shapes, shared by every project)
 ```
 
 Every child relation cascades on delete, so removing a namespace removes its
@@ -67,6 +68,7 @@ left behind.
 | `translation_keys` | `original_text` is always the English master. `text_hash` is its 36 character fingerprint. `source_text` retains the upload when it was not English. |
 | `translations` | Unique on `(translation_key_id, lang_code)`. `source_hash` records the fingerprint at translation time, which is how staleness is detected. `is_manual` protects human edits from a rerun. |
 | `auth_tokens` | Ledger making short lived tokens genuinely single use. Stores a SHA-256 digest, never the token. |
+| `export_formats` | Unique on `(namespace_account_id, format_id)`. Describes the shape of a downloaded locale document as data, never as a template: a leaf shape, the field names to emit, and whether dotted paths expand into a tree. Hangs off the namespace so one shape serves every project underneath. |
 
 ## The translation pipeline
 
@@ -106,10 +108,29 @@ Decrypted credentials are passed into the worker because that is where provider
 calls happen. They exist only in that message and in memory for the duration of
 the job; nothing is written to disk and nothing reaches a log.
 
+## Export formats
+
+A download is packaged one of three ways (a single locale, every locale in one
+JSON envelope, or `langs.zip`) and its documents are written in one of the
+namespace's formats. The two questions are independent, which is why they are
+separate query fields rather than one.
+
+Two formats ship with the application and exist for every namespace without
+being stored: `default`, the value and hash shape described below, and
+`key_value`, the bare string a localization library reads directly. Neither can
+be edited or deleted, because a build script already downloads with it.
+
+A namespace may store further formats of its own, and every project underneath
+can then be downloaded in any of them. A stored format is a description rather
+than a template: it names the leaf shape (`OBJECT` or `STRING`), the field names
+an object leaf carries, and whether a dotted path expands into a tree. Nothing
+stored is evaluated, so a format is not an execution surface, and field names
+are refused before storage if they could reach `Object.prototype`.
+
 ## Change tracking
 
-Every master string carries a deterministic 36 character fingerprint, and every
-exported leaf carries it alongside the translation:
+Every master string carries a deterministic 36 character fingerprint, and the
+`default` export shape carries it alongside the translation on every leaf:
 
 ```json
 {
@@ -128,6 +149,10 @@ translation.
 
 This is a change detection fingerprint, not a security primitive. It is never
 used for authentication, signatures or password storage.
+
+Choosing `key_value` trades this away: the document holds no fingerprint, so
+staleness cannot be read from the file. `GET /files/:fileId/translations` still
+reports it, which is where the editor gets its warnings from either way.
 
 ### Correcting one string
 

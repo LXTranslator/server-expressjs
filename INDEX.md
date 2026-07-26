@@ -82,6 +82,7 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/translationKey.js`](src/infrastructure/database/models/translationKey.js) | Master strings and their fingerprints. |
 | [`src/infrastructure/database/models/translation.js`](src/infrastructure/database/models/translation.js) | Per language translated strings. |
 | [`src/infrastructure/database/models/authToken.js`](src/infrastructure/database/models/authToken.js) | Single use short lived token ledger. |
+| [`src/infrastructure/database/models/exportFormat.js`](src/infrastructure/database/models/exportFormat.js) | Download shapes owned by a namespace. |
 | [`src/infrastructure/crypto/secretBox.js`](src/infrastructure/crypto/secretBox.js) | AES 256 GCM encryption for stored credentials. |
 | [`src/infrastructure/email/mailer.js`](src/infrastructure/email/mailer.js) | Console and SMTP mail transports. |
 | [`src/infrastructure/ai/providerError.js`](src/infrastructure/ai/providerError.js) | Provider failure categories driving the fallback chain. |
@@ -136,6 +137,9 @@ One directory per business capability.
 | [`src/modules/translations/translationExport.js`](src/modules/translations/translationExport.js) | Value and hash export format builder. |
 | [`src/modules/translations/translationConsistency.js`](src/modules/translations/translationConsistency.js) | On demand master to translation consistency report. |
 | [`src/modules/translations/translation.schemas.js`](src/modules/translations/translation.schemas.js) | Translation edit request schemas. |
+| [`src/modules/exportFormats/exportFormat.definitions.js`](src/modules/exportFormats/exportFormat.definitions.js) | Built in format descriptors and field name rules. |
+| [`src/modules/exportFormats/exportFormat.service.js`](src/modules/exportFormats/exportFormat.service.js) | Namespace owned export format management. |
+| [`src/modules/exportFormats/exportFormat.schemas.js`](src/modules/exportFormats/exportFormat.schemas.js) | Export format request schemas. |
 
 ### Routing
 
@@ -170,6 +174,7 @@ Off thread execution of the translation pipeline.
 | [`tests/fileGrowth.test.js`](tests/fileGrowth.test.js) | Adding languages and merging new keys into an existing file. |
 | [`tests/locale.test.js`](tests/locale.test.js) | Locale code acceptance across the whole supported catalogue. |
 | [`tests/archive.test.js`](tests/archive.test.js) | ZIP writer round trips, entry name safety and the archive download. |
+| [`tests/exportFormat.test.js`](tests/exportFormat.test.js) | Built in and namespace owned export formats, and the download shapes they produce. |
 | [`tests/consistency.test.js`](tests/consistency.test.js) | Placeholder extraction, single key updates, partial retranslation and the consistency check. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |

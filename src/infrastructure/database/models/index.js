@@ -10,6 +10,7 @@ const defineFile = require('./file');
 const defineTranslationKey = require('./translationKey');
 const defineTranslation = require('./translation');
 const defineAuthToken = require('./authToken');
+const defineExportFormat = require('./exportFormat');
 
 const Account = defineAccount(sequelize);
 const OrgMember = defineOrgMember(sequelize);
@@ -19,6 +20,7 @@ const File = defineFile(sequelize);
 const TranslationKey = defineTranslationKey(sequelize);
 const Translation = defineTranslation(sequelize);
 const AuthToken = defineAuthToken(sequelize);
+const ExportFormat = defineExportFormat(sequelize);
 
 /*
  * Associations.
@@ -105,6 +107,18 @@ Translation.belongsTo(TranslationKey, {
   foreignKey: { name: 'translationKeyId', field: 'translation_key_id' },
 });
 
+// Namespace to export formats. A format is written once for the namespace and
+// used by every project underneath it.
+Account.hasMany(ExportFormat, {
+  as: 'exportFormats',
+  foreignKey: { name: 'namespaceAccountId', field: 'namespace_account_id' },
+  onDelete: 'CASCADE',
+});
+ExportFormat.belongsTo(Account, {
+  as: 'namespace',
+  foreignKey: { name: 'namespaceAccountId', field: 'namespace_account_id' },
+});
+
 // Account to short lived tokens.
 Account.hasMany(AuthToken, {
   as: 'authTokens',
@@ -126,4 +140,5 @@ module.exports = {
   TranslationKey,
   Translation,
   AuthToken,
+  ExportFormat,
 };
