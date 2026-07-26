@@ -149,58 +149,63 @@ keys per project and the priority ordered fallback between them.
 
 ## Variable reference
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PROD` | `false` | Selects production mode, PostgreSQL and strict secrets. |
-| `PORT` | `4000` | Listening port. |
-| `HOST` | `0.0.0.0` | Listening interface. |
-| `CLIENT_URL` | `http://localhost:5173` | Base URL used to build password reset links. |
-| `CORS_ORIGINS` | localhost origins | Comma separated origin allowlist. |
-| `TRUST_PROXY` | `PROD` | Trust the forwarded client address header. |
-| `LOG_LEVEL` | `info` | One of `silent`, `error`, `warn`, `info`, `debug`. |
-| `SQLITE_STORAGE` | `./data/lxtranslator.sqlite` | SQLite file path when `PROD` is false. |
-| `PG_HOST` | required in production | PostgreSQL host. |
-| `PG_PORT` | `5432` | PostgreSQL port. |
-| `PG_DATABASE` | required in production | PostgreSQL database name. |
-| `PG_USER` | required in production | PostgreSQL user. |
-| `PG_PASSWORD` | required in production | PostgreSQL password. |
-| `PG_SSL` | `true` | Require TLS to PostgreSQL. |
-| `PG_POOL_MAX` | `10` | Maximum pooled connections. |
-| `PG_POOL_MIN` | `0` | Minimum pooled connections. |
-| `PG_POOL_IDLE` | `10000` | Idle connection timeout in milliseconds. |
-| `JWT_SECRET` | development default | Token signing secret, minimum 32 characters in production. |
-| `JWT_ISSUER` | `lxtranslator` | Expected token issuer. |
-| `JWT_AUDIENCE` | `lxtranslator_client` | Expected token audience. |
-| `ACCESS_TOKEN_TTL_SECONDS` | `3600` | Session token lifetime. |
-| `ENCRYPTION_PASSPHRASE` | development default | Derives the credential encryption key. |
-| `BCRYPT_ROUNDS` | `12` | Password hashing cost. |
-| `MAX_FAILED_LOGINS` | `5` | Failures before an account is locked. |
-| `LOCKOUT_MINUTES` | `15` | Lockout duration. |
-| `RATE_LIMIT_ENABLED` | `true` | Master switch for rate limiting. |
-| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window. |
-| `RATE_LIMIT_GLOBAL_MAX` | `300` | Requests per window per address. |
-| `RATE_LIMIT_AUTH_MAX` | `10` | Credential endpoint requests per window. |
-| `RATE_LIMIT_AVAILABILITY_MAX` | `20` | Availability probe requests per window. |
-| `RATE_LIMIT_UPLOAD_MAX` | `20` | Uploads per window. |
-| `UPLOAD_STORAGE_DIR` | `./storage/uploads` | Root for archived uploads. |
-| `UPLOAD_MAX_BYTES` | `2097152` | Maximum upload size in bytes. |
-| `UPLOAD_MAX_JSON_DEPTH` | `20` | Maximum nesting depth accepted. |
-| `UPLOAD_MAX_KEYS` | `5000` | Maximum translatable keys per file. |
-| `AI_DEFAULT_PROVIDER` | `mock` | Provider chosen for new projects. |
-| `AI_DEFAULT_MODEL` | `mock-small` | Model chosen for new projects. |
-| `AI_DEFAULT_API_KEY` | development default | Built in key, refused in production. |
-| `AI_REQUEST_TIMEOUT_MS` | `30000` | Per provider request timeout. |
-| `AI_MAX_ATTEMPTS_PER_KEY` | `2` | Retries per credential before moving on. |
-| `AI_BATCH_SIZE` | `25` | Strings per provider request. |
-| `WORKER_POOL_SIZE` | `2` | Translation worker threads. |
-| `WORKER_TASK_TIMEOUT_MS` | `300000` | Maximum duration of one job. |
-| `MAIL_TRANSPORT` | `console` outside production | `console` or `smtp`. |
-| `MAIL_FROM` | local address | Sender address. |
-| `SMTP_HOST` | unset | SMTP host, required when the transport is `smtp`. |
-| `SMTP_PORT` | `587` | SMTP port. |
-| `SMTP_SECURE` | `false` | Use implicit TLS. |
-| `SMTP_USER` | unset | SMTP username. |
-| `SMTP_PASSWORD` | unset | SMTP password. |
+`Required` answers whether the server refuses to boot without the variable. A
+`no` means a default applies, not that the value is unimportant. The handful of
+`yes` rows are conditional on the mode they belong to, since nothing at all is
+required for a development or test run.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `PROD` | no | `false` | Selects production mode, PostgreSQL and strict secrets. |
+| `PORT` | no | `4000` | Listening port. |
+| `HOST` | no | `0.0.0.0` | Listening interface. |
+| `CLIENT_URL` | no | `http://localhost:5173` | Base URL used to build password reset links. |
+| `CORS_ORIGINS` | no | localhost origins | Comma separated origin allowlist. |
+| `TRUST_PROXY` | no | `PROD` | Trust the forwarded client address header. |
+| `LOG_LEVEL` | no | `info` | One of `silent`, `error`, `warn`, `info`, `debug`. |
+| `SQLITE_STORAGE` | no | `./data/lxtranslator.sqlite` | SQLite file path when `PROD` is false. |
+| `PG_HOST` | yes when `PROD=true` | none | PostgreSQL host. |
+| `PG_PORT` | no | `5432` | PostgreSQL port. |
+| `PG_DATABASE` | yes when `PROD=true` | none | PostgreSQL database name. |
+| `PG_USER` | yes when `PROD=true` | none | PostgreSQL user. |
+| `PG_PASSWORD` | yes when `PROD=true` | none | PostgreSQL password. |
+| `PG_SSL` | no | `true` | Require TLS to PostgreSQL. |
+| `PG_POOL_MAX` | no | `10` | Maximum pooled connections. |
+| `PG_POOL_MIN` | no | `0` | Minimum pooled connections. |
+| `PG_POOL_IDLE` | no | `10000` | Idle connection timeout in milliseconds. |
+| `JWT_SECRET` | yes when `PROD=true` | development default | Token signing secret, minimum 32 characters in production. |
+| `JWT_ISSUER` | no | `lxtranslator` | Expected token issuer. |
+| `JWT_AUDIENCE` | no | `lxtranslator_client` | Expected token audience. |
+| `ACCESS_TOKEN_TTL_SECONDS` | no | `3600` | Session token lifetime. |
+| `ENCRYPTION_PASSPHRASE` | yes when `PROD=true` | development default | Derives the credential encryption key. |
+| `BCRYPT_ROUNDS` | no | `12` | Password hashing cost. |
+| `MAX_FAILED_LOGINS` | no | `5` | Failures before an account is locked. |
+| `LOCKOUT_MINUTES` | no | `15` | Lockout duration. |
+| `RATE_LIMIT_ENABLED` | no | `true` | Master switch for rate limiting. |
+| `RATE_LIMIT_WINDOW_MS` | no | `60000` | Rate limit window. |
+| `RATE_LIMIT_GLOBAL_MAX` | no | `300` | Requests per window per address. |
+| `RATE_LIMIT_AUTH_MAX` | no | `10` | Credential endpoint requests per window. |
+| `RATE_LIMIT_AVAILABILITY_MAX` | no | `20` | Availability probe requests per window. |
+| `RATE_LIMIT_UPLOAD_MAX` | no | `20` | Uploads per window. |
+| `UPLOAD_STORAGE_DIR` | no | `./storage/uploads` | Root for archived uploads. |
+| `UPLOAD_MAX_BYTES` | no | `2097152` | Maximum upload size in bytes. |
+| `UPLOAD_MAX_JSON_DEPTH` | no | `20` | Maximum nesting depth accepted. |
+| `UPLOAD_MAX_KEYS` | no | `5000` | Maximum translatable keys per file. |
+| `AI_DEFAULT_PROVIDER` | no | `mock` | Provider chosen for new projects. |
+| `AI_DEFAULT_MODEL` | no | `mock-small` | Model chosen for new projects. |
+| `AI_DEFAULT_API_KEY` | no | development default | Built in key, refused in production. |
+| `AI_REQUEST_TIMEOUT_MS` | no | `30000` | Per provider request timeout. |
+| `AI_MAX_ATTEMPTS_PER_KEY` | no | `2` | Retries per credential before moving on. |
+| `AI_BATCH_SIZE` | no | `25` | Strings per provider request. |
+| `WORKER_POOL_SIZE` | no | `2` | Translation worker threads. |
+| `WORKER_TASK_TIMEOUT_MS` | no | `300000` | Maximum duration of one job. |
+| `MAIL_TRANSPORT` | no | `console` outside production | `console` or `smtp`. |
+| `MAIL_FROM` | no | local address | Sender address. |
+| `SMTP_HOST` | yes when `MAIL_TRANSPORT=smtp` | unset | SMTP host. |
+| `SMTP_PORT` | no | `587` | SMTP port. |
+| `SMTP_SECURE` | no | `false` | Use implicit TLS. |
+| `SMTP_USER` | no | unset | SMTP username. |
+| `SMTP_PASSWORD` | no | unset | SMTP password. |
 
 ## Docker
 
