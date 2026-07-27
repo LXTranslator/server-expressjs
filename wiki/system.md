@@ -268,8 +268,8 @@ brake is the model deciding it is finished has no brake.
 ### What it can change
 
 The tools cover the settings a person would otherwise go and click: a project's
-name, description, languages, files, and the platform and model it translates
-on. That last one matters more than it looks. Without it the assistant would
+name, description, languages, files, the platform and model it translates on,
+and the shapes its downloads are written in. That last one matters more than it looks. Without it the assistant would
 answer a request to use a particular model by writing the request into the
 description, which sets nothing and leaves the project translating on whatever
 it defaulted to, while reading as though it had been done.
@@ -278,6 +278,13 @@ it defaulted to, while reading as though it had been done.
 so a model asked for a platform or a model it half remembers can check rather
 than guess, and a refusal comes back with the catalogue attached so the
 correction costs no extra turn.
+
+Export formats are reachable the same way. A format is four choices rather than
+a template, which is not obvious from a request written as `"{key}": "{value}"`,
+so both format tools return a preview rendered by the real export builder. The
+person sees the document they will get rather than a description of it, and the
+preview cannot drift from the download because it is not a second
+implementation of it.
 
 ### The model has no authority
 

@@ -36,6 +36,53 @@ const {
 const MAX_FORMATS_PER_NAMESPACE = 50;
 
 /**
+ * Sample used to show what a format produces.
+ *
+ * Two keys sharing a prefix, because that is the only arrangement where nesting
+ * is visible: nested they become one object with two members, flat they stay
+ * two dotted keys. A single key would render identically either way and show
+ * nothing.
+ */
+const PREVIEW_KEYS = Object.freeze([
+  Object.freeze({
+    keyName: 'greeting.hello',
+    originalText: 'Hello',
+    textHash: '123e4567-e89b-12d3-a456-426614174000',
+    translations: [Object.freeze({ langCode: 'th_th', translatedText: 'สวัสดี' })],
+  }),
+  Object.freeze({
+    keyName: 'greeting.farewell',
+    originalText: 'Goodbye',
+    textHash: '123e4567-e89b-12d3-a456-426614174001',
+    translations: [Object.freeze({ langCode: 'th_th', translatedText: 'ลาก่อน' })],
+  }),
+]);
+
+/**
+ * Renders what a document written in this format would look like.
+ *
+ * Built by the real export builder rather than by describing it in prose, so
+ * the preview cannot drift from what a download actually produces. That matters
+ * because the four fields of a descriptor are not obvious: somebody asking for
+ * `"greeting.hello": "..."` has to be able to see whether they got it, rather
+ * than reason about what `nested: false` and a `STRING` leaf combine to mean.
+ *
+ * @param {object} descriptor Format descriptor.
+ * @returns {object} A sample document in that format.
+ */
+function previewFormat(descriptor) {
+  // Required here rather than at the top of the file: the export builder reads
+  // format definitions, so a top level require would be a cycle.
+  const { buildLocaleDocument } = require('../translations/translationExport');
+
+  return buildLocaleDocument({
+    translationKeys: PREVIEW_KEYS.map((key) => ({ ...key })),
+    langCode: 'th_th',
+    format: descriptor,
+  });
+}
+
+/**
  * Lists the formats a namespace can export in, built in ones first.
  *
  * @param {string} namespaceAccountId Owning namespace.
@@ -231,6 +278,7 @@ async function removeFormat(namespaceAccountId, formatId) {
 
 module.exports = {
   listFormats,
+  previewFormat,
   resolveFormat,
   createFormat,
   updateFormat,
