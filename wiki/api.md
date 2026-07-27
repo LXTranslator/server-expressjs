@@ -639,6 +639,8 @@ replaces that, and nothing rewrites a chosen name afterwards.
 | `upload_file` | Uploads the attachment into a project that **already exists** | `ADMIN` in an organization |
 | `list_files` | Lists a project's files and their status | Project access |
 | `add_languages` | Adds targets to one project, several, or all | `ADMIN` in an organization |
+| `list_export_formats` | The download shapes this namespace offers, each with a sample | Namespace access |
+| `create_export_format` | Creates a download shape for the namespace | `ADMIN` in an organization |
 | `find_chat` | Searches the caller's own past conversations | Namespace access |
 | `stop` | Ends the turn with a summary | None |
 
@@ -672,6 +674,16 @@ carrying the catalogue, so the correction costs no extra turn. Setting a
 platform the account cannot pay for succeeds, exactly as the settings page
 allows, and returns a `warning` the assistant relays. Existing translations are
 never redone by the change.
+
+`create_export_format` takes the same four choices the endpoint does, never a
+template string, and both format tools return a `preview`: a two key sample
+rendered by the real export builder, so what the assistant shows cannot drift
+from what a download produces. Somebody asking for `"greeting.hello": "..."`
+gets `leaf_shape: STRING` with `nested: false` and can see that they did:
+
+```json
+{ "greeting.hello": "สวัสดี", "greeting.farewell": "ลาก่อน" }
+```
 
 ### `GET /namespaces/:namespace/chat/sessions`
 

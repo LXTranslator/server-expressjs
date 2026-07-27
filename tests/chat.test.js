@@ -143,9 +143,11 @@ describe('the assistant', () => {
       expect(listToolDefinitions().map((tool) => tool.name).sort()).toEqual([
         'add_languages',
         'check_project_languages',
+        'create_export_format',
         'create_project',
         'find_chat',
         'get_project_description',
+        'list_export_formats',
         'list_files',
         'list_platforms',
         'list_projects',
@@ -478,6 +480,224 @@ describe('the assistant', () => {
       );
 
       expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('creating an export format', () => {
+    /*
+     * Before these tools existed the assistant answered "none of the tools I
+     * have available support creating custom export formats" and suggested the
+     * person raise it with their product team. The capability was there; only
+     * the tool was missing.
+     *
+     * The example that prompted this asked for '"{key}": "{value}"' with no
+     * nesting, which is a STRING leaf and nested false.
+     */
+
+    it('creates the flat key and value shape that was asked for', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: {
+            format_id: 'flat_pairs',
+            name: 'Flat pairs',
+            leaf_shape: 'STRING',
+            nested: false,
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.export_format.leaf_shape).toBe('STRING');
+      expect(result.export_format.nested).toBe(false);
+
+      // The dotted path stays one key, which is the whole point of the request.
+      expect(result.preview).toEqual({
+        'greeting.hello': 'สวัสดี',
+        'greeting.farewell': 'ลาก่อน',
+      });
+    });
+
+    it('previews a nested shape as nested, so the two are distinguishable', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: {
+            format_id: 'nested_pairs',
+            name: 'Nested pairs',
+            leaf_shape: 'STRING',
+            nested: true,
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.preview).toEqual({
+        greeting: { hello: 'สวัสดี', farewell: 'ลาก่อน' },
+      });
+    });
+
+    it('names the leaf fields it was given', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: {
+            format_id: 'named_fields',
+            name: 'Named fields',
+            leaf_shape: 'OBJECT',
+            value_field: 'text',
+            hash_field: 'fingerprint',
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(Object.keys(result.preview.greeting.hello)).toEqual(['text', 'fingerprint']);
+    });
+
+    it('drops the fingerprint when the hash field is null', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: {
+            format_id: 'no_hash',
+            name: 'No fingerprint',
+            leaf_shape: 'OBJECT',
+            hash_field: null,
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(Object.keys(result.preview.greeting.hello)).toEqual(['value']);
+    });
+
+    it('lists what the namespace offers, each with a preview', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'list_export_formats', arguments: {} },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+
+      const ids = result.export_formats.map((format) => format.format_id);
+      expect(ids).toContain('default');
+      expect(ids).toContain('key_value');
+      expect(ids).toContain('flat_pairs');
+
+      const builtIn = result.export_formats.find((format) => format.format_id === 'key_value');
+      expect(builtIn.preview).toEqual({
+        greeting: { hello: 'สวัสดี', farewell: 'ลาก่อน' },
+      });
+    });
+
+    it('refuses to redefine a built in format', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: { format_id: 'key_value', name: 'Mine instead' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/built in format/);
+      expect(result.instruction).toMatch(/different identifier/);
+    });
+
+    it('refuses an identifier already used in this namespace', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: { format_id: 'flat_pairs', name: 'Again' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/already has an export format/);
+    });
+
+    it('refuses a field name that would reach Object.prototype', async () => {
+      // The format is stored and later written as a JSON key, so the name is
+      // checked here as well as at the endpoint.
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: {
+            format_id: 'poisoned',
+            name: 'Poisoned',
+            leaf_shape: 'OBJECT',
+            value_field: '__proto__',
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('refuses an identifier outside the permitted character set', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: { format_id: 'Not Valid!', name: 'Bad identifier' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not usable/);
+    });
+
+    it('refuses a plain member of an organization', async () => {
+      const member = await registerAccount(app, {
+        user_id: 'format_member',
+        email: 'format_member@example.test',
+      });
+
+      const organization = await request(app)
+        .post('/api/v1/namespaces/organizations')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ user_id: 'format_org', email: 'format_org@example.test' })
+        .expect(201);
+
+      await request(app)
+        .post(`/api/v1/namespaces/format_org/settings/members`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ identifier: 'format_member', role: 'MEMBER' })
+        .expect(201);
+
+      const { Account } = require('../src/infrastructure/database/models');
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_export_format',
+          arguments: { format_id: 'member_made', name: 'Member made' },
+        },
+        {
+          actor: await Account.findByPk(member.account.id),
+          namespace: await Account.findByPk(organization.body.data.namespace.id),
+          namespaceRole: 'MEMBER',
+          attachment: null,
+          sessionId: null,
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/ADMIN|permission|allowed/i);
     });
   });
 
