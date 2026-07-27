@@ -8,7 +8,7 @@ const { DEFAULT_FORMAT } = require('../exportFormats/exportFormat.definitions');
  * Export format for generated locale files.
  *
  * The shape of a document is chosen by a format descriptor, which belongs to
- * the owning namespace. Two descriptors ship with the application.
+ * the owning namespace. Three descriptors ship with the application.
  *
  * `default`, the original shape, gives every leaf both the translated string
  * and the 36 character fingerprint of the English master text it was produced
@@ -37,9 +37,17 @@ const { DEFAULT_FORMAT } = require('../exportFormats/exportFormat.definitions');
  * which is what a localization library reads directly, at the cost of carrying
  * no fingerprint.
  *
- * Nesting is preserved in both. A key stored as `greeting.hello` is emitted as
- * `{"greeting": {"hello": ...}}`, matching the shape that was uploaded. A
- * format may turn `nested` off, which emits the dotted path as one key instead.
+ * Nesting is preserved in both of those. A key stored as `greeting.hello` is
+ * emitted as `{"greeting": {"hello": ...}}`, matching the shape that was
+ * uploaded. `flat_key_value` is `key_value` with `nested` turned off, which
+ * keeps the dotted path as a single key:
+ *
+ * ```json
+ * { "greeting.hello": "สวัสดี" }
+ * ```
+ *
+ * for tooling that looks a full key path up in one flat map rather than walking
+ * into objects.
  */
 
 /**

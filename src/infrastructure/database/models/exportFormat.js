@@ -30,10 +30,10 @@ const FORMAT_ID_PATTERN = /^[a-z0-9_]{2,50}$/;
  * emit, and the export builder interprets those. Nothing stored here is
  * evaluated, so a stored row cannot become a template injection.
  *
- * The two formats the application ships with, `default` and `key_value`, are
- * constants rather than rows. Keeping them out of the table means they exist
- * for every namespace without seeding, and that nobody can edit or delete the
- * shape a published consumer already depends on.
+ * The three formats the application ships with, `default`, `key_value` and
+ * `flat_key_value`, are constants rather than rows. Keeping them out of the
+ * table means they exist for every namespace without seeding, and that nobody
+ * can edit or delete the shape a published consumer already depends on.
  *
  * @param {import('sequelize').Sequelize} sequelize Connection instance.
  * @returns {import('sequelize').ModelStatic<any>} The ExportFormat model.

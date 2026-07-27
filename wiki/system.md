@@ -127,10 +127,12 @@ JSON envelope, or `langs.zip`) and its documents are written in one of the
 namespace's formats. The two questions are independent, which is why they are
 separate query fields rather than one.
 
-Two formats ship with the application and exist for every namespace without
-being stored: `default`, the value and hash shape described below, and
-`key_value`, the bare string a localization library reads directly. Neither can
-be edited or deleted, because a build script already downloads with it.
+Three formats ship with the application and exist for every namespace without
+being stored: `default`, the value and hash shape described below; `key_value`,
+the bare string a localization library reads directly; and `flat_key_value`,
+the same bare string with each dotted path kept as one key rather than expanded
+into a tree. None can be edited or deleted, because a build script already
+downloads with it.
 
 A namespace may store further formats of its own, and every project underneath
 can then be downloaded in any of them. A stored format is a description rather
@@ -162,9 +164,10 @@ translation.
 This is a change detection fingerprint, not a security primitive. It is never
 used for authentication, signatures or password storage.
 
-Choosing `key_value` trades this away: the document holds no fingerprint, so
-staleness cannot be read from the file. `GET /files/:fileId/translations` still
-reports it, which is where the editor gets its warnings from either way.
+Choosing `key_value` or `flat_key_value` trades this away: the document holds no
+fingerprint, so staleness cannot be read from the file. `GET
+/files/:fileId/translations` still reports it, which is where the editor gets
+its warnings from either way.
 
 ### Correcting one string
 

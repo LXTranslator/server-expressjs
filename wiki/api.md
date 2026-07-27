@@ -634,6 +634,54 @@ The shapes a locale document can be downloaded in. A format belongs to the
 namespace rather than to a project, so one is written once and offered by every
 project underneath it. Any role may read the list, since picking a format is
 part of downloading.
+
+```json
+{
+  "data": {
+    "export_formats": [
+      {
+        "format_id": "default",
+        "name": "Value and hash",
+        "description": "Every leaf carries the translated string and the fingerprint...",
+        "leaf_shape": "OBJECT",
+        "value_field": "value",
+        "hash_field": "hash",
+        "nested": true,
+        "built_in": true,
+        "created_at": null
+      },
+      {
+        "format_id": "key_value",
+        "name": "Key and value",
+        "description": "Plain JSON key and value pairs, ready to use as it is...",
+        "leaf_shape": "STRING",
+        "value_field": null,
+        "hash_field": null,
+        "nested": true,
+        "built_in": true,
+        "created_at": null
+      },
+      {
+        "format_id": "flat_key_value",
+        "name": "Flat key and value",
+        "description": "Plain JSON key and value pairs with the dotted path kept as a single key...",
+        "leaf_shape": "STRING",
+        "value_field": null,
+        "hash_field": null,
+        "nested": false,
+        "built_in": true,
+        "created_at": null
+      }
+    ]
+  }
+}
+```
+
+`default`, `key_value` and `flat_key_value` ship with the application and exist
+in every namespace. They are listed first and cannot be changed or removed:
+**409** on a `PATCH`, a `DELETE`, or a `POST` that reuses one of their
+identifiers.
+
 ## Account AI credentials
 
 The only place a provider credential is stored. These keys pay for everything the
@@ -657,27 +705,6 @@ and its last four characters.
 ```json
 {
   "data": {
-    "export_formats": [
-      {
-        "format_id": "default",
-        "name": "Value and hash",
-        "description": "Every leaf carries the translated string and the fingerprint...",
-        "leaf_shape": "OBJECT",
-        "value_field": "value",
-        "hash_field": "hash",
-        "nested": true,
-        "built_in": true,
-        "created_at": null
-      },
-      {
-        "format_id": "key_value",
-        "name": "Key and value",
-        "leaf_shape": "STRING",
-        "value_field": null,
-        "hash_field": null,
-        "nested": true,
-        "built_in": true,
-        "created_at": null
     "keys": [
       {
         "id": "...",
@@ -696,10 +723,6 @@ and its last four characters.
   }
 }
 ```
-
-`default` and `key_value` ship with the application and exist in every
-namespace. They are listed first and cannot be changed or removed: **409** on a
-`PATCH`, a `DELETE`, or a `POST` that reuses one of their identifiers.
 
 ### `POST /namespaces/:namespace/export_formats`
 
@@ -1477,6 +1500,14 @@ same locale comes back ready to use as it is:
 
 ```json
 { "greeting": { "hello": "สวัสดี {name}" } }
+```
+
+`export_format=flat_key_value` writes the same strings with each dotted path
+kept as a single key, for tooling that reads one flat map rather than walking
+into objects:
+
+```json
+{ "greeting.hello": "สวัสดี {name}" }
 ```
 
 Without `?lang=`, returns every locale in one envelope:

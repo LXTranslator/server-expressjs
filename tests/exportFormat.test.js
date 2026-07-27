@@ -123,14 +123,18 @@ describe('export formats', () => {
   });
 
   describe('catalogue', () => {
-    it('offers both built in formats to a namespace that created none', async () => {
+    it('offers every built in format to a namespace that created none', async () => {
       const response = await request(app)
         .get(`/api/v1/namespaces/${namespace}/export_formats`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
       const formats = response.body.data.export_formats;
-      expect(formats.map((format) => format.format_id)).toEqual(['default', 'key_value']);
+      expect(formats.map((format) => format.format_id)).toEqual([
+        'default',
+        'key_value',
+        'flat_key_value',
+      ]);
       expect(formats.every((format) => format.built_in)).toBe(true);
     });
 
@@ -143,6 +147,7 @@ describe('export formats', () => {
       expect(response.body.data.export_formats.map((format) => format.format_id)).toEqual([
         'default',
         'key_value',
+        'flat_key_value',
       ]);
     });
   });
@@ -232,6 +237,77 @@ describe('export formats', () => {
     });
   });
 
+  describe('flat_key_value format', () => {
+    it('keeps the dotted path as a single key rather than nesting it', async () => {
+      const response = await request(app)
+        .get(`/api/v1/files/${file.id}/download`)
+        .query({ lang: 'th_th', export_format: 'flat_key_value' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const document = JSON.parse(response.text);
+      expect(typeof document['greeting.hello']).toBe('string');
+      expect(document['greeting.hello']).toContain('Hello');
+      // The nesting the upload had must be gone, not merely duplicated.
+      expect(document.greeting).toBeUndefined();
+    });
+
+    it('leaves a key that never had a path alone', async () => {
+      const response = await request(app)
+        .get(`/api/v1/files/${file.id}/download`)
+        .query({ lang: 'th_th', export_format: 'flat_key_value' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(typeof JSON.parse(response.text).save).toBe('string');
+    });
+
+    it('carries no fingerprint anywhere in the document', async () => {
+      const response = await request(app)
+        .get(`/api/v1/files/${file.id}/download`)
+        .query({ lang: 'th_th', export_format: 'flat_key_value' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.text).not.toContain('hash');
+    });
+
+    it('applies to every document in the archive', async () => {
+      const response = await asBuffer(
+        request(app)
+          .get(`/api/v1/files/${file.id}/download`)
+          .query({ format: 'zip', export_format: 'flat_key_value' })
+          .set('Authorization', `Bearer ${token}`),
+      ).expect(200);
+
+      const entries = readZipArchive(response.body);
+      expect(Object.keys(entries).sort()).toEqual(['en_us.json', 'th_th.json']);
+      expect(typeof JSON.parse(entries['th_th.json'])['greeting.hello']).toBe('string');
+      expect(JSON.parse(entries['en_us.json']).greeting).toBeUndefined();
+    });
+
+    it('cannot be edited or removed, being built in', async () => {
+      await request(app)
+        .patch(`/api/v1/namespaces/${namespace}/export_formats/flat_key_value`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Something else' })
+        .expect(409);
+
+      await request(app)
+        .delete(`/api/v1/namespaces/${namespace}/export_formats/flat_key_value`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+    });
+
+    it('cannot be redefined by a namespace', async () => {
+      await request(app)
+        .post(`/api/v1/namespaces/${namespace}/export_formats`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ format_id: 'flat_key_value', name: 'Mine' })
+        .expect(409);
+    });
+  });
+
   describe('formats a namespace creates', () => {
     it('creates one and uses it on a download', async () => {
       await request(app)
@@ -304,7 +380,7 @@ describe('export formats', () => {
         .expect(200);
 
       const ids = response.body.data.export_formats.map((format) => format.format_id);
-      expect(ids.slice(0, 2)).toEqual(['default', 'key_value']);
+      expect(ids.slice(0, 3)).toEqual(['default', 'key_value', 'flat_key_value']);
       expect(ids).toContain('flat_text');
     });
 
@@ -448,6 +524,7 @@ describe('export formats', () => {
       expect(response.body.data.export_formats.map((format) => format.format_id)).toEqual([
         'default',
         'key_value',
+        'flat_key_value',
       ]);
     });
 

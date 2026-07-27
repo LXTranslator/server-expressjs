@@ -1077,7 +1077,7 @@ const TOOLS = [
   {
     name: 'list_export_formats',
     description:
-      'List the shapes a locale file can be downloaded in for the current namespace, including the two built in ones, each with a sample of what it produces.',
+      'List the shapes a locale file can be downloaded in for the current namespace, including the three built in ones, each with a sample of what it produces. Call this before creating a format: a flat dotted key map and a nested one both ship already.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     schema: z.object({}).strict(),
 
@@ -1125,7 +1125,7 @@ const TOOLS = [
         format_id: {
           type: 'string',
           description:
-            'Identifier a download names this format by, 2 to 50 lowercase letters, digits and underscores. Cannot be "default" or "key_value", which are built in.',
+            'Identifier a download names this format by, 2 to 50 lowercase letters, digits and underscores. Cannot be "default", "key_value" or "flat_key_value", which are built in.',
         },
         name: { type: 'string', description: 'Human readable name shown in a dropdown.' },
         description: {
