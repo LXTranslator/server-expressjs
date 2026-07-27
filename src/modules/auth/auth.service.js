@@ -9,6 +9,7 @@ const { Account } = require('../../infrastructure/database/models');
 const { sendPasswordResetEmail } = require('../../infrastructure/email/mailer');
 const { ConflictError, UnauthorizedError } = require('../../core/errors');
 const { isReservedIdentifier } = require('../../core/reservedIdentifiers');
+const sessionService = require('./session.service');
 const {
   issueAccessToken,
   issueActionToken,
@@ -82,7 +83,7 @@ async function checkAvailability({ userId, email }) {
  * @returns {Promise<{account: object, token: string, expiresIn: number}>}
  * @throws {ConflictError} When the user id or email is taken.
  */
-async function register(input) {
+async function register(input, context = {}) {
   const existing = await Account.findOne({
     where: { [Op.or]: [{ userId: input.user_id }, { email: input.email }] },
   });
@@ -104,7 +105,7 @@ async function register(input) {
 
   logger.info('Account registered.', { accountId: account.id, userId: account.userId });
 
-  const { token, expiresIn } = issueAccessToken(account);
+  const { token, expiresIn } = await issueAccessToken(account, context);
   return { account, token, expiresIn };
 }
 
@@ -112,10 +113,12 @@ async function register(input) {
  * Authenticates a set of credentials.
  *
  * @param {{identifier: string, password: string}} input Validated payload.
+ * @param {{userAgent?: string, name?: string}} [context] Where the sign in came
+ *   from, recorded on the session so it can be recognised in a list later.
  * @returns {Promise<{account: object, token: string, expiresIn: number}>}
  * @throws {UnauthorizedError} When the credentials are wrong or the account is locked.
  */
-async function login(input) {
+async function login(input, context = {}) {
   const identifier = input.identifier.trim().toLowerCase();
 
   const account = await Account.findOne({
@@ -162,7 +165,7 @@ async function login(input) {
 
   logger.info('Login succeeded.', { accountId: account.id });
 
-  const { token, expiresIn } = issueAccessToken(account);
+  const { token, expiresIn } = await issueAccessToken(account, context);
   return { account, token, expiresIn };
 }
 
@@ -234,6 +237,11 @@ async function resetPassword(input) {
   });
 
   await revokeActionTokens(account.id);
+
+  // Every session too. Somebody resetting a password they may have lost
+  // control of is asking for whoever else holds it to be signed out, and a
+  // session that survived the reset would defeat the reset.
+  await sessionService.revokeAll({ accountId: account.id });
 
   logger.info('Password reset completed.', { accountId: account.id });
   return { account };

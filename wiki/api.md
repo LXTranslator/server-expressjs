@@ -228,6 +228,74 @@ different purpose. Resetting invalidates every other outstanding action token.
 
 Returns the account behind the current session. Requires authentication.
 
+### Sessions
+
+Every sign in creates a row in `account_sessions`, and that row is the
+authority. A signed token proves who somebody is and nothing else; it cannot be
+taken back, so without the row signing out could only forget the token locally
+while it stayed valid everywhere else it had been copied.
+
+Many sessions per account is the ordinary case, not a special one: a laptop, a
+phone and a second browser profile are three rows, and ending one does not
+touch the others.
+
+#### `POST /auth/logout`
+
+Ends the session this request was made with. Returns **204**. The token stops
+working immediately rather than at its expiry.
+
+#### `GET /auth/sessions`
+
+```json
+{
+  "data": {
+    "sessions": [
+      {
+        "id": "...",
+        "kind": "SESSION",
+        "name": null,
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        "masked_token": null,
+        "last_used_at": "2026-07-27T09:14:00.000Z",
+        "expires_at": "2026-07-27T10:14:00.000Z",
+        "created_at": "2026-07-27T09:14:00.000Z",
+        "current": true
+      }
+    ]
+  }
+}
+```
+
+`current` marks the session the request was made with, which is what stops
+somebody ending the one they are reading the list from by accident. `user_agent`
+is stored so the list is actionable at all; the address the request came from is
+deliberately not stored, since it locates a person and answers the same question
+worse.
+
+#### `DELETE /auth/sessions/:sessionId`
+
+Ends one session, which may be the current one. Returns **204**. A session
+belonging to another account is **404**, not 403.
+
+#### `POST /auth/sessions/revoke_others`
+
+Ends every session except the one asking, and reports how many.
+
+```json
+{ "data": { "revoked": 3 } }
+```
+
+Keeping the caller signed in is what makes this usable: the alternative signs
+them out mid request and leaves them unable to confirm it worked.
+
+#### What ends a session besides asking
+
+| Event | Effect |
+|---|---|
+| `PATCH /settings/password` | Every other session ends. The one making the change is kept. |
+| `POST /auth/password/reset` | **Every** session ends, including the one asking. A reset is the flow for a password somebody may have lost control of. |
+| Account deleted | Rows cascade away with it. |
+
 ---
 
 ## Account settings

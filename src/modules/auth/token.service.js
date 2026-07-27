@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const config = require('../../config');
 const { AuthToken } = require('../../infrastructure/database/models');
+const sessionService = require('./session.service');
 const { UnauthorizedError } = require('../../core/errors');
 
 /**
@@ -12,8 +13,10 @@ const { UnauthorizedError } = require('../../core/errors');
  *
  * Two families of token exist:
  *
- *   - Access tokens: ordinary session bearers, stateless, valid for their
- *     configured lifetime.
+ *   - Access tokens: ordinary session bearers. Signed for their configured
+ *     lifetime and recorded in `account_sessions`, so one can be revoked before
+ *     it expires. A signature alone cannot be taken back, and taking a session
+ *     back is most of what signing out means.
  *   - Short lived action tokens: password reset, email change and settings
  *     update. The specification requires these to expire in exactly ten minutes
  *     and to become invalid the instant they are used.
@@ -42,25 +45,44 @@ function hashToken(token) {
 }
 
 /**
- * Issues a session access token.
+ * Issues a session access token and records the session it belongs to.
+ *
+ * The `jti` and the row identifier are the same value, which is what lets a
+ * presented token find its row directly rather than by searching for a digest.
  *
  * @param {object} account Account model instance.
- * @returns {{token: string, expiresIn: number}} Signed token and its lifetime.
+ * @param {object} [context] Where the sign in came from.
+ * @param {string} [context.userAgent] Client that asked for it.
+ * @param {string} [context.name] What to call this session.
+ * @returns {Promise<{token: string, expiresIn: number, sessionId: string}>}
  */
-function issueAccessToken(account) {
+async function issueAccessToken(account, context = {}) {
+  const sessionId = crypto.randomUUID();
+  const expiresIn = config.security.accessTokenTtlSeconds;
+
   const token = jwt.sign(
     { sub: account.id, userId: account.userId, type: account.type, tokenType: ACCESS_TOKEN_TYPE },
     config.security.jwtSecret,
     {
       algorithm: 'HS256',
-      expiresIn: config.security.accessTokenTtlSeconds,
+      expiresIn,
       issuer: config.security.jwtIssuer,
       audience: config.security.jwtAudience,
-      jwtid: crypto.randomUUID(),
+      jwtid: sessionId,
     },
   );
 
-  return { token, expiresIn: config.security.accessTokenTtlSeconds };
+  await sessionService.recordSession({
+    id: sessionId,
+    accountId: account.id,
+    kind: 'SESSION',
+    tokenHash: hashToken(token),
+    name: context.name,
+    userAgent: context.userAgent,
+    expiresAt: new Date(Date.now() + expiresIn * 1000),
+  });
+
+  return { token, expiresIn, sessionId };
 }
 
 /**

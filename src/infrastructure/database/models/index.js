@@ -9,6 +9,7 @@ const defineFile = require('./file');
 const defineTranslationKey = require('./translationKey');
 const defineTranslation = require('./translation');
 const defineAuthToken = require('./authToken');
+const defineAccountSession = require('./accountSession');
 const defineExportFormat = require('./exportFormat');
 const defineAccountApiKey = require('./accountApiKey');
 const defineAiChatLog = require('./aiChatLog');
@@ -21,6 +22,7 @@ const File = defineFile(sequelize);
 const TranslationKey = defineTranslationKey(sequelize);
 const Translation = defineTranslation(sequelize);
 const AuthToken = defineAuthToken(sequelize);
+const AccountSession = defineAccountSession(sequelize);
 const ExportFormat = defineExportFormat(sequelize);
 const AccountApiKey = defineAccountApiKey(sequelize);
 const AiChatLog = defineAiChatLog(sequelize);
@@ -191,6 +193,22 @@ AiChatLog.belongsTo(AiChatSession, {
   foreignKey: { name: 'sessionId', field: 'session_id' },
 });
 
+/*
+ * Account to the credentials that authenticate it.
+ *
+ * Many per account by design: a laptop, a phone, a second browser profile and
+ * a build script are four rows, each endable without touching the others.
+ */
+Account.hasMany(AccountSession, {
+  as: 'sessions',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AccountSession.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
 // Account to short lived tokens.
 Account.hasMany(AuthToken, {
   as: 'authTokens',
@@ -211,6 +229,7 @@ module.exports = {
   TranslationKey,
   Translation,
   AuthToken,
+  AccountSession,
   ExportFormat,
   AccountApiKey,
   AiChatLog,

@@ -80,6 +80,7 @@ Adapters for everything outside the process.
 | [`src/infrastructure/database/models/file.js`](src/infrastructure/database/models/file.js) | Uploaded translation files and processing status. |
 | [`src/infrastructure/database/models/translationKey.js`](src/infrastructure/database/models/translationKey.js) | Master strings and their fingerprints. |
 | [`src/infrastructure/database/models/translation.js`](src/infrastructure/database/models/translation.js) | Per language translated strings. |
+| [`src/infrastructure/database/models/accountSession.js`](src/infrastructure/database/models/accountSession.js) | A revocable credential. Many per account, so several devices sign in at once. |
 | [`src/infrastructure/database/models/authToken.js`](src/infrastructure/database/models/authToken.js) | Single use short lived token ledger. |
 | [`src/infrastructure/database/models/exportFormat.js`](src/infrastructure/database/models/exportFormat.js) | Download shapes owned by a namespace. |
 | [`src/infrastructure/database/models/accountApiKey.js`](src/infrastructure/database/models/accountApiKey.js) | Encrypted namespace level AI credentials with platform, model and priority order. |
@@ -123,6 +124,7 @@ One directory per business capability.
 | [`src/modules/auth/auth.controller.js`](src/modules/auth/auth.controller.js) | Authentication HTTP handlers. |
 | [`src/modules/auth/auth.service.js`](src/modules/auth/auth.service.js) | Registration, login, lockout and password reset. |
 | [`src/modules/auth/auth.schemas.js`](src/modules/auth/auth.schemas.js) | Authentication request schemas. |
+| [`src/modules/auth/session.service.js`](src/modules/auth/session.service.js) | Recording, listing and revoking the credentials that authenticate an account. |
 | [`src/modules/auth/token.service.js`](src/modules/auth/token.service.js) | Session and single use token issuing and redemption. |
 | [`src/modules/accounts/account.routes.js`](src/modules/accounts/account.routes.js) | Account settings routes. |
 | [`src/modules/accounts/account.service.js`](src/modules/accounts/account.service.js) | Confirmed user id, email and password changes. |
@@ -191,6 +193,7 @@ Off thread execution of the translation pipeline.
 | [`tests/consistency.test.js`](tests/consistency.test.js) | Placeholder extraction, single key updates, partial retranslation and the consistency check. |
 | [`tests/accountAi.test.js`](tests/accountAi.test.js) | Namespace AI credentials, the organization to personal fallback chain and the chat log table. |
 | [`tests/provider.test.js`](tests/provider.test.js) | OpenRouter adapter, registry and model allowlist tests. |
+| [`tests/session.test.js`](tests/session.test.js) | Multiple sign ins, real sign out, ending one device from another, and what a password change does. |
 | [`tests/security.test.js`](tests/security.test.js) | Sanitisation, encryption, fallback and upload hardening tests. |
 | [`tests/chat.test.js`](tests/chat.test.js) | The agent loop, every tool, tool level authorization, buffered logging, search and embeddings. |
 

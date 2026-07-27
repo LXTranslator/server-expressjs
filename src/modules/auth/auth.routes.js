@@ -43,4 +43,21 @@ router.post(
 
 router.get('/me', authenticate, controller.me);
 
+/*
+ * Sessions.
+ *
+ * Where this account is signed in, and how to end any of it. Always the
+ * caller's own: a session identifier is a UUID somebody could hold from
+ * anywhere, so every one of these filters by the authenticated account as well
+ * and answers 404 for a row belonging to somebody else.
+ */
+
+router.post('/logout', authenticate, controller.logout);
+
+router.get('/sessions', authenticate, controller.listSessions);
+
+router.post('/sessions/revoke_others', authenticate, controller.revokeOtherSessions);
+
+router.delete('/sessions/:sessionId', authenticate, controller.revokeSession);
+
 module.exports = router;
