@@ -277,7 +277,53 @@ describe('the assistant', () => {
      * LXTranslator to configure an AI model or provider" and wrote the request
      * into the project description instead, which set nothing and left the
      * project translating on whatever it had defaulted to.
+     *
+     * One project, several across different namespaces, or all of them. The
+     * boundary is the same in every case and is not a filter: each project is
+     * resolved through the same function the REST routes use, so a namespace
+     * the caller does not belong to cannot be reached however it is named.
      */
+
+    /** An account with its own namespace and an organization it owns. */
+    let bulk;
+
+    beforeAll(async () => {
+      bulk = await registerAccount(app, {
+        user_id: 'bulk_owner',
+        email: 'bulk_owner@example.test',
+      });
+
+      const organization = await request(app)
+        .post('/api/v1/namespaces/organizations')
+        .set('Authorization', `Bearer ${bulk.token}`)
+        .send({ user_id: 'bulk_org', email: 'bulk_org@example.test' })
+        .expect(201);
+
+      bulk.orgHandle = organization.body.data.namespace.user_id;
+      bulk.personal = await createProject(app, bulk.token, bulk.account.user_id, {
+        name: 'personal_one',
+      });
+      bulk.orgProject = await createProject(app, bulk.token, bulk.orgHandle, {
+        name: 'org_one',
+      });
+    });
+
+    /**
+     * A tool context acting as the bulk account in its own namespace.
+     *
+     * @returns {Promise<object>} Tool context.
+     */
+    async function bulkContext() {
+      const { Account } = require('../src/infrastructure/database/models');
+      const live = await Account.findByPk(bulk.account.id);
+      return {
+        actor: live,
+        namespace: live,
+        namespaceRole: 'OWNER',
+        attachment: null,
+        sessionId: null,
+      };
+    }
 
     it('lists the platforms and models that actually exist', async () => {
       const result = await dispatchTool(
@@ -297,8 +343,8 @@ describe('the assistant', () => {
     });
 
     it('creates a project on the platform and model that were asked for', async () => {
-      // The example that prompted this: "Create new project as Minecraft and
-      // set ai as openrouter model deepseek/deepseek-v4-flash".
+      // "Create new project as Minecraft and set ai as openrouter model
+      // deepseek/deepseek-v4-flash".
       const result = await dispatchTool(
         {
           id: '1',
@@ -317,169 +363,404 @@ describe('the assistant', () => {
       expect(result.project.ai_model).toBe('deepseek/deepseek-v4-flash');
     });
 
-    it('changes the platform of a project that already exists', async () => {
-      const project = await createProject(app, token, namespace, { name: 'retargeted' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: {
-            project_id: project.id,
-            ai_provider: 'openrouter',
-            ai_model: 'deepseek/deepseek-v4-pro',
+    describe('one project', () => {
+      it('changes the platform and model of the project named', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: {
+              project_ids: [bulk.personal.id],
+              ai_provider: 'openrouter',
+              ai_model: 'deepseek/deepseek-v4-pro',
+            },
           },
-        },
-        await context(),
-      );
+          await bulkContext(),
+        );
 
-      expect(result.ok).toBe(true);
-      expect(result.project.ai_model).toBe('deepseek/deepseek-v4-pro');
-      // Retranslation is not implied by a settings change, and saying so is the
-      // difference between a helpful answer and a misleading one.
-      expect(result.instruction).toMatch(/not redone/i);
-    });
-
-    it('uses the platform default when only a platform is named', async () => {
-      const project = await createProject(app, token, namespace, { name: 'default_model' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: project.id, ai_provider: 'anthropic' },
-        },
-        await context(),
-      );
-
-      expect(result.ok).toBe(true);
-      expect(result.project.ai_model).toBe('claude-opus-5');
-    });
-
-    it('warns that nothing on the account pays for the platform', async () => {
-      const project = await createProject(app, token, namespace, { name: 'unpaid' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: project.id, ai_provider: 'openrouter' },
-        },
-        await context(),
-      );
-
-      expect(result.ok).toBe(true);
-      expect(result.warning).toMatch(/no active openrouter credential/i);
-    });
-
-    it('says nothing about payment once a credential exists', async () => {
-      await request(app)
-        .post(`/api/v1/namespaces/${namespace}/settings/ai_keys`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ provider: 'openrouter', api_key: 'openrouter_key_for_tools_1234' })
-        .expect(201);
-
-      const project = await createProject(app, token, namespace, { name: 'paid_for' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: project.id, ai_provider: 'openrouter' },
-        },
-        await context(),
-      );
-
-      expect(result.ok).toBe(true);
-      expect(result.warning).toBeUndefined();
-
-      await AccountApiKey.destroy({ where: { accountId: account.id } });
-    });
-
-    it('warns that the offline platform translates nothing', async () => {
-      const project = await createProject(app, token, namespace, { name: 'offline_target' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: project.id, ai_provider: 'mock' },
-        },
-        await context(),
-      );
-
-      expect(result.ok).toBe(true);
-      expect(result.warning).toMatch(/translates nothing/i);
-    });
-
-    it('refuses a model the platform does not offer, and says what it does', async () => {
-      const project = await createProject(app, token, namespace, { name: 'bad_model' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: project.id, ai_provider: 'openrouter', ai_model: 'gpt-9' },
-        },
-        await context(),
-      );
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toMatch(/not offered by OpenRouter/);
-      // The catalogue comes back with the refusal rather than after another
-      // paid turn spent asking for it.
-      expect(result.platforms.find((entry) => entry.name === 'openrouter').models).toContain(
-        'deepseek/deepseek-v4-flash',
-      );
-    });
-
-    it('refuses a platform outside the registry', async () => {
-      const project = await createProject(app, token, namespace, { name: 'bad_platform' });
-
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: project.id, ai_provider: 'deepseek' },
-        },
-        await context(),
-      );
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toMatch(/not supported/);
-    });
-
-    it('refuses a call that names neither a platform nor a model', async () => {
-      const project = await createProject(app, token, namespace, { name: 'names_nothing' });
-
-      const result = await dispatchTool(
-        { id: '1', name: 'update_project_ai', arguments: { project_id: project.id } },
-        await context(),
-      );
-
-      expect(result.ok).toBe(false);
-      expect(result.error).toMatch(/not usable/);
-    });
-
-    it('refuses to retarget a project in a namespace the caller cannot reach', async () => {
-      const outsider = await registerAccount(app, {
-        user_id: 'ai_tool_outsider',
-        email: 'ai_tool_outsider@example.test',
-      });
-      const theirs = await createProject(app, outsider.token, outsider.account.user_id, {
-        name: 'not_yours',
+        expect(result.ok).toBe(true);
+        expect(result.applied).toHaveLength(1);
+        expect(result.applied[0].ai_model).toBe('deepseek/deepseek-v4-pro');
+        // Retranslation is not implied by a settings change, and saying so is
+        // the difference between a helpful answer and a misleading one.
+        expect(result.instruction).toMatch(/not redone/i);
       });
 
-      const result = await dispatchTool(
-        {
-          id: '1',
-          name: 'update_project_ai',
-          arguments: { project_id: theirs.id, ai_provider: 'openrouter' },
-        },
-        await context(),
-      );
+      it('uses the platform default when only a platform is named', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { project_ids: [bulk.personal.id], ai_provider: 'anthropic' },
+          },
+          await bulkContext(),
+        );
 
-      expect(result.ok).toBe(false);
+        expect(result.ok).toBe(true);
+        expect(result.applied[0].ai_model).toBe('claude-opus-5');
+      });
+    });
+
+    describe('several projects at once', () => {
+      it('reaches projects in different namespaces in one call', async () => {
+        // One project in the person's own namespace, one in an organization
+        // they own. The context names only the personal namespace, so this
+        // proves the reach comes from resolving each project rather than from
+        // whichever namespace the conversation happens to be in.
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: {
+              project_ids: [bulk.personal.id, bulk.orgProject.id],
+              ai_provider: 'openai',
+            },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.applied).toHaveLength(2);
+        expect(result.applied.map((entry) => entry.namespace).sort()).toEqual([
+          'bulk_org',
+          'bulk_owner',
+        ]);
+        expect(result.applied.every((entry) => entry.ai_provider === 'openai')).toBe(true);
+      });
+
+      it('skips a project in an organization the caller does not belong to', async () => {
+        const stranger = await registerAccount(app, {
+          user_id: 'bulk_stranger',
+          email: 'bulk_stranger@example.test',
+        });
+        const strangerOrg = await request(app)
+          .post('/api/v1/namespaces/organizations')
+          .set('Authorization', `Bearer ${stranger.token}`)
+          .send({ user_id: 'stranger_org', email: 'stranger_org@example.test' })
+          .expect(201);
+
+        const theirs = await createProject(
+          app,
+          stranger.token,
+          strangerOrg.body.data.namespace.user_id,
+          { name: 'not_reachable' },
+        );
+
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: {
+              project_ids: [bulk.personal.id, theirs.id],
+              ai_provider: 'anthropic',
+            },
+          },
+          await bulkContext(),
+        );
+
+        // The reachable one is changed and the other is reported, rather than
+        // one unreachable identifier failing the whole batch.
+        expect(result.ok).toBe(true);
+        expect(result.applied.map((entry) => entry.project_id)).toEqual([bulk.personal.id]);
+        expect(result.skipped.map((entry) => entry.project_id)).toEqual([theirs.id]);
+
+        // And it really was left alone.
+        const after = await request(app)
+          .get(`/api/v1/projects/${theirs.id}`)
+          .set('Authorization', `Bearer ${stranger.token}`)
+          .expect(200);
+        expect(after.body.data.project.ai_provider).not.toBe('anthropic');
+      });
+
+      it('refuses more projects than one call may touch', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: {
+              project_ids: Array.from({ length: 40 }, (unused, index) => index + 1),
+              ai_provider: 'openai',
+            },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/not usable/);
+      });
+    });
+
+    describe('every project', () => {
+      it('sweeps the caller own namespace and their organizations', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { all_projects: true, ai_provider: 'anthropic' },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.applied.map((entry) => entry.namespace).sort()).toEqual([
+          'bulk_org',
+          'bulk_owner',
+        ]);
+      });
+
+      it('never reaches a namespace the caller does not belong to', async () => {
+        // The sweep is built from the caller's own memberships, so a project
+        // elsewhere cannot appear in it however many organizations exist.
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { all_projects: true, ai_provider: 'openai' },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(true);
+        expect(
+          result.applied.every((entry) => ['bulk_org', 'bulk_owner'].includes(entry.namespace)),
+        ).toBe(true);
+      });
+
+      it('skips an organization the caller is only a member of', async () => {
+        // A sweep is not a permission either: ADMIN is still required inside an
+        // organization, and a project that fails it is reported rather than
+        // quietly changed.
+        const member = await registerAccount(app, {
+          user_id: 'bulk_member',
+          email: 'bulk_member@example.test',
+        });
+
+        await request(app)
+          .post(`/api/v1/namespaces/${bulk.orgHandle}/settings/members`)
+          .set('Authorization', `Bearer ${bulk.token}`)
+          .send({ identifier: 'bulk_member', role: 'MEMBER' })
+          .expect(201);
+
+        const memberOwn = await createProject(app, member.token, member.account.user_id, {
+          name: 'member_own',
+        });
+
+        const { Account } = require('../src/infrastructure/database/models');
+        const live = await Account.findByPk(member.account.id);
+
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { all_projects: true, ai_provider: 'openai' },
+          },
+          {
+            actor: live,
+            namespace: live,
+            namespaceRole: 'OWNER',
+            attachment: null,
+            sessionId: null,
+          },
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.applied.map((entry) => entry.project_id)).toEqual([memberOwn.id]);
+        expect(result.skipped.length).toBeGreaterThan(0);
+        expect(result.skipped[0].reason).toMatch(/ADMIN|permission|allowed/i);
+      });
+    });
+
+    describe('what it reports back', () => {
+      it('warns that nothing on the account pays for the platform', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { project_ids: [bulk.personal.id], ai_provider: 'openrouter' },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.warnings.join(' ')).toMatch(/no active openrouter credential/i);
+      });
+
+      it('says nothing about payment once a credential exists', async () => {
+        await request(app)
+          .post(`/api/v1/namespaces/${bulk.account.user_id}/settings/ai_keys`)
+          .set('Authorization', `Bearer ${bulk.token}`)
+          .send({ provider: 'openrouter', api_key: 'openrouter_key_for_tools_1234' })
+          .expect(201);
+
+        try {
+          const result = await dispatchTool(
+            {
+              id: '1',
+              name: 'update_project_ai',
+              arguments: { project_ids: [bulk.personal.id], ai_provider: 'openrouter' },
+            },
+            await bulkContext(),
+          );
+
+          expect(result.ok).toBe(true);
+          expect(result.warnings).toBeUndefined();
+        } finally {
+          // In a finally, because a stored credential that outlives this test
+          // sends every later chat turn at a real vendor. A failed assertion
+          // must not take the rest of the file with it.
+          await AccountApiKey.destroy({ where: { accountId: bulk.account.id } });
+        }
+      });
+
+      it('counts a personal credential as paying for an organization project', async () => {
+        // The chain is organization keys then the caller's own, so a personal
+        // credential really does stand behind an organization project when
+        // that person is the one acting. Warning about it would be wrong.
+        await request(app)
+          .post(`/api/v1/namespaces/${bulk.account.user_id}/settings/ai_keys`)
+          .set('Authorization', `Bearer ${bulk.token}`)
+          .send({ provider: 'openai', api_key: 'openai_key_personal_only_5678' })
+          .expect(201);
+
+        try {
+          const result = await dispatchTool(
+            {
+              id: '1',
+              name: 'update_project_ai',
+              arguments: {
+                project_ids: [bulk.personal.id, bulk.orgProject.id],
+                ai_provider: 'openai',
+              },
+            },
+            await bulkContext(),
+          );
+
+          expect(result.ok).toBe(true);
+          expect(result.warnings).toBeUndefined();
+        } finally {
+          await AccountApiKey.destroy({ where: { accountId: bulk.account.id } });
+        }
+      });
+
+      it('warns only about the namespace that cannot pay', async () => {
+        // The organization holds an OpenAI credential and the person holds
+        // none, so the organization's project is covered and their own is not.
+        // One warning, naming which.
+        const organization = await request(app)
+          .get(`/api/v1/namespaces/${bulk.orgHandle}`)
+          .set('Authorization', `Bearer ${bulk.token}`)
+          .expect(200);
+
+        await request(app)
+          .post(`/api/v1/namespaces/${bulk.orgHandle}/settings/ai_keys`)
+          .set('Authorization', `Bearer ${bulk.token}`)
+          .send({ provider: 'openai', api_key: 'openai_key_org_only_9012' })
+          .expect(201);
+
+        try {
+          const result = await dispatchTool(
+            {
+              id: '1',
+              name: 'update_project_ai',
+              arguments: {
+                project_ids: [bulk.personal.id, bulk.orgProject.id],
+                ai_provider: 'openai',
+              },
+            },
+            await bulkContext(),
+          );
+
+          expect(result.ok).toBe(true);
+          expect(result.warnings).toHaveLength(1);
+          expect(result.warnings[0]).toMatch(/^bulk_owner:/);
+        } finally {
+          await AccountApiKey.destroy({
+            where: { accountId: organization.body.data.namespace.id },
+          });
+        }
+      });
+
+      it('warns that the offline platform translates nothing', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { project_ids: [bulk.personal.id], ai_provider: 'mock' },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.warnings.join(' ')).toMatch(/translates nothing/i);
+      });
+    });
+
+    describe('names that do not exist', () => {
+      it('refuses a model the platform does not offer, and says what it does', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: {
+              project_ids: [bulk.personal.id],
+              ai_provider: 'openrouter',
+              ai_model: 'gpt-9',
+            },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/not offered by OpenRouter/);
+        // The catalogue comes back with the refusal rather than after another
+        // paid turn spent asking for it.
+        expect(result.platforms.find((entry) => entry.name === 'openrouter').models).toContain(
+          'deepseek/deepseek-v4-flash',
+        );
+      });
+
+      it('refuses a platform outside the registry once, not once per project', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: {
+              project_ids: [bulk.personal.id, bulk.orgProject.id],
+              ai_provider: 'deepseek',
+            },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/not supported/);
+        // A name that is wrong everywhere is one refusal, not two skips.
+        expect(result.skipped).toBeUndefined();
+      });
+
+      it('refuses a call that names neither a platform nor a model', async () => {
+        const result = await dispatchTool(
+          {
+            id: '1',
+            name: 'update_project_ai',
+            arguments: { project_ids: [bulk.personal.id] },
+          },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/not usable/);
+      });
+
+      it('refuses a call that names no project at all', async () => {
+        const result = await dispatchTool(
+          { id: '1', name: 'update_project_ai', arguments: { ai_provider: 'openai' } },
+          await bulkContext(),
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatch(/no project was named/i);
+      });
     });
   });
 

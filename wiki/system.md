@@ -275,6 +275,18 @@ particular model by writing the request into the description, which sets nothing
 and leaves the project translating on whatever it defaulted to, while reading as
 though it had been done.
 
+Retargeting is a batch operation, because moving one project to a new model is
+rarely what somebody wants: they have decided the model was wrong. So
+`update_project_ai` takes one project, a list, or all of them, and a list may
+span namespaces.
+
+The reach is not a filter applied afterwards. Every project in a batch goes
+through `resolveProjectAccess` against the signed in account, exactly as a
+single one does, so an organization the caller does not belong to cannot be
+reached however it is named, and one they belong to without `ADMIN` is reported
+as skipped. A sweep is built from the caller's own memberships, so nothing
+outside them can enter it in the first place.
+
 `list_platforms` exists for the same reason. The registry is a fixed allowlist,
 so a model asked for a platform or a model it half remembers can check rather
 than guess, and a refusal comes back with the catalogue attached so the
