@@ -1196,6 +1196,216 @@ describe('the assistant', () => {
     });
   });
 
+  describe('adding languages', () => {
+    /*
+     * One locale, several, or every locale already in use.
+     *
+     * That last one needs saying plainly: "all languages" cannot mean the whole
+     * catalogue. The interface offers well over a hundred locales, and adding
+     * them all would send every string of every file to a provider in each of
+     * them, from one sentence typed into a chat box. It means the set already
+     * in use, which is what somebody asking to "add all the languages" to a new
+     * project actually wants.
+     */
+
+    /** An account whose language set is known, so the sweep is predictable. */
+    let langs;
+
+    beforeAll(async () => {
+      langs = await registerAccount(app, {
+        user_id: 'lang_owner',
+        email: 'lang_owner@example.test',
+      });
+
+      langs.established = await createProject(app, langs.token, langs.account.user_id, {
+        name: 'established',
+      });
+
+      // Two languages in use across the account, and nothing else.
+      const uploaded = await request(app)
+        .post(`/api/v1/projects/${langs.established.id}/files`)
+        .set('Authorization', `Bearer ${langs.token}`)
+        .field('target_langs', 'th_th,ja_jp')
+        .attach('file', Buffer.from(JSON.stringify({ greeting: 'Hello' })), 'en_us.json')
+        .expect(202);
+      await waitForFile(app, langs.token, uploaded.body.data.file.id);
+
+      langs.fresh = await createProject(app, langs.token, langs.account.user_id, {
+        name: 'fresh',
+      });
+      const freshUpload = await request(app)
+        .post(`/api/v1/projects/${langs.fresh.id}/files`)
+        .set('Authorization', `Bearer ${langs.token}`)
+        .field('target_langs', 'th_th')
+        .attach('file', Buffer.from(JSON.stringify({ greeting: 'Hello' })), 'en_us.json')
+        .expect(202);
+      await waitForFile(app, langs.token, freshUpload.body.data.file.id);
+    });
+
+    /**
+     * A tool context acting as the language account.
+     *
+     * @returns {Promise<object>} Tool context.
+     */
+    async function langContext() {
+      const { Account } = require('../src/infrastructure/database/models');
+      const live = await Account.findByPk(langs.account.id);
+      return {
+        actor: live,
+        namespace: live,
+        namespaceRole: 'OWNER',
+        attachment: null,
+        sessionId: null,
+      };
+    }
+
+    it('adds one language', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { target_langs: ['ko_kr'], project_ids: [langs.fresh.id] },
+        },
+        await langContext(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.requested_langs).toEqual(['ko_kr']);
+      expect(result.applied[0].added).toEqual(['ko_kr']);
+    });
+
+    it('adds several languages at once', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { target_langs: ['de_de', 'fr_fr'], project_ids: [langs.fresh.id] },
+        },
+        await langContext(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.applied[0].added.sort()).toEqual(['de_de', 'fr_fr']);
+    });
+
+    it('adds every language already in use, not every language that exists', async () => {
+      // The fresh project has th_th, ko_kr, de_de and fr_fr by now; the
+      // established one has th_th and ja_jp. Asking for all of them brings the
+      // fresh project up to the whole set, which is ja_jp short.
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { all_langs: true, project_ids: [langs.fresh.id] },
+        },
+        await langContext(),
+      );
+
+      expect(result.ok).toBe(true);
+
+      // The set is the union of what is in use, and it is reported back so the
+      // person can see what "all" resolved to rather than trusting it.
+      expect(result.requested_langs).toEqual(
+        ['de_de', 'fr_fr', 'ja_jp', 'ko_kr', 'th_th'],
+      );
+      expect(result.applied[0].added).toEqual(['ja_jp']);
+
+      // Nothing from the wider catalogue crept in.
+      expect(result.requested_langs).not.toContain('af_za');
+      expect(result.requested_langs.length).toBeLessThan(10);
+    });
+
+    it('never offers the English master as a target', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { all_langs: true, project_ids: [langs.fresh.id] },
+        },
+        await langContext(),
+      );
+
+      expect(result.requested_langs).not.toContain('en_us');
+    });
+
+    it('says so when there is no language set to copy', async () => {
+      const bare = await registerAccount(app, {
+        user_id: 'lang_bare',
+        email: 'lang_bare@example.test',
+      });
+      const project = await createProject(app, bare.token, bare.account.user_id, {
+        name: 'nothing_yet',
+      });
+
+      const { Account } = require('../src/infrastructure/database/models');
+      const live = await Account.findByPk(bare.account.id);
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { all_langs: true, project_ids: [project.id] },
+        },
+        {
+          actor: live,
+          namespace: live,
+          namespaceRole: 'OWNER',
+          attachment: null,
+          sessionId: null,
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/no language is in use/i);
+      expect(result.instruction).toMatch(/which locales/i);
+    });
+
+    it('gathers only from namespaces the caller belongs to', async () => {
+      // Another account is using a language this one never has. It must not
+      // appear in the set, or "all languages" would leak what other people
+      // translate into.
+      const stranger = await registerAccount(app, {
+        user_id: 'lang_stranger',
+        email: 'lang_stranger@example.test',
+      });
+      const theirs = await createProject(app, stranger.token, stranger.account.user_id, {
+        name: 'stranger_project',
+      });
+      const upload = await request(app)
+        .post(`/api/v1/projects/${theirs.id}/files`)
+        .set('Authorization', `Bearer ${stranger.token}`)
+        .field('target_langs', 'is_is')
+        .attach('file', Buffer.from(JSON.stringify({ greeting: 'Hello' })), 'en_us.json')
+        .expect(202);
+      await waitForFile(app, stranger.token, upload.body.data.file.id);
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { all_langs: true, project_ids: [langs.established.id] },
+        },
+        await langContext(),
+      );
+
+      expect(result.requested_langs).not.toContain('is_is');
+    });
+
+    it('refuses a call that names neither languages nor all of them', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_languages',
+          arguments: { project_ids: [langs.fresh.id] },
+        },
+        await langContext(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not usable/);
+    });
+  });
+
   describe('authorization, which the model never performs', () => {
     let orgHandle;
     let ownerToken;
