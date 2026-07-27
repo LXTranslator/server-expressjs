@@ -807,6 +807,18 @@ Lists the namespace's projects.
 
 Returns **201**. Inside an organization this requires `ADMIN` or above.
 
+`ai_provider` is optional. Omitting it does not mean "any platform will do": the
+project takes the platform of the first active credential on the account, the
+organization's before the caller's own, matching the order the fallback chain is
+walked. `ai_model` then defaults to that platform's own default model.
+
+Only when the account holds no credential at all does the project fall back to
+`AI_DEFAULT_PROVIDER`, which is the offline `mock`. That platform contacts no
+vendor: it returns the English text with a locale marker in front of it
+(`[th:711f] Dirt`) and the file still reaches `READY`. It exists so the
+application runs on a clean clone, and handing it to an account that has a real
+key would fill an editor with rows that look like translations and are not.
+
 ---
 
 ## Projects

@@ -4,6 +4,7 @@ const config = require('../../config');
 const logger = require('../../core/logger');
 const { Project } = require('../../infrastructure/database/models');
 const { getProvider, isKnownProvider } = require('../../infrastructure/ai/providers');
+const accountKeyService = require('../accountKeys/accountKey.service');
 const { BadRequestError, ConflictError } = require('../../core/errors');
 
 /**
@@ -37,15 +38,35 @@ async function listProjects(namespaceAccountId) {
 /**
  * Creates a project.
  *
+ * Naming no platform does not mean "any platform will do". It means the caller
+ * has no opinion, and the best answer to that is the platform the account can
+ * actually pay for, so a project created straight after adding an OpenRouter
+ * key translates through OpenRouter without anybody selecting it.
+ *
+ * The configured default is used only when the account has no credential at
+ * all. That default is the offline mock, which returns the source text with a
+ * locale marker in front of it. It is what keeps the application runnable on a
+ * clean clone, and it is the wrong thing to hand somebody who has a real key:
+ * it reports the file as finished and fills the editor with placeholder text
+ * that looks like a translation.
+ *
  * @param {string} namespaceAccountId Owning namespace.
  * @param {{name: string, description?: string, ai_provider?: string, ai_model?: string}} input
  *   Validated payload.
+ * @param {object} [options] Options.
+ * @param {string} [options.actorAccountId] Person creating it, whose personal
+ *   credentials stand behind the namespace's own.
  * @returns {Promise<object>} Client safe project.
  * @throws {ConflictError} When the namespace already has a project with that name.
  * @throws {BadRequestError} When the provider or model is not recognised.
  */
-async function createProject(namespaceAccountId, input) {
-  const providerName = input.ai_provider ?? config.ai.defaultProvider;
+async function createProject(namespaceAccountId, input, { actorAccountId } = {}) {
+  const configured =
+    input.ai_provider === undefined
+      ? await accountKeyService.findConfiguredProvider({ namespaceAccountId, actorAccountId })
+      : null;
+
+  const providerName = input.ai_provider ?? configured ?? config.ai.defaultProvider;
   const provider = getProvider(providerName);
 
   if (provider === null) {
