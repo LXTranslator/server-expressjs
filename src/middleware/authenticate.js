@@ -3,6 +3,7 @@
 const { Account } = require('../infrastructure/database/models');
 const { verifyAccessToken } = require('../modules/auth/token.service');
 const sessionService = require('../modules/auth/session.service');
+const apiTokenService = require('../modules/auth/apiToken.service');
 const { UnauthorizedError } = require('../core/errors');
 const asyncHandler = require('../core/asyncHandler');
 
@@ -38,6 +39,32 @@ function readBearerToken(req) {
  * @throws {UnauthorizedError} When anything about it is no longer good.
  */
 async function resolveToken(token) {
+  /*
+   * Two credential families reach this line, and which one a bearer belongs to
+   * is decided by its shape before either is checked. An API token is opaque,
+   * so it has no claims and is looked up by digest; a session token is signed,
+   * so its signature is verified and its `jti` names its row. Neither is ever
+   * run through the other's path.
+   */
+  if (apiTokenService.isApiToken(token)) {
+    const record = await apiTokenService.resolveApiToken(token);
+    if (record === null) {
+      throw new UnauthorizedError('This API token is invalid, revoked or expired.');
+    }
+
+    const owner = await Account.findByPk(record.accountId);
+    if (owner === null) {
+      throw new UnauthorizedError('The account for this token no longer exists.');
+    }
+    if (owner.lockedUntil !== null && owner.lockedUntil > new Date()) {
+      throw new UnauthorizedError('This account is temporarily locked.');
+    }
+
+    // No claims: an opaque token asserts nothing, and everything downstream
+    // reads the account rather than the token anyway.
+    return { account: owner, claims: null, session: record };
+  }
+
   const claims = verifyAccessToken(token);
 
   const session = await sessionService.findLiveById(claims.jti);

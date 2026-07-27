@@ -4,6 +4,7 @@ const asyncHandler = require('../../core/asyncHandler');
 const { validated } = require('../../middleware/validate');
 const authService = require('./auth.service');
 const sessionService = require('./session.service');
+const apiTokenService = require('./apiToken.service');
 
 /**
  * HTTP handlers for the authentication module.
@@ -180,6 +181,49 @@ const revokeOtherSessions = asyncHandler(async (req, res) => {
   res.json({ data: { revoked } });
 });
 
+/**
+ * POST /auth/api_tokens
+ * Creates a machine credential and returns it exactly once.
+ */
+const createApiToken = asyncHandler(async (req, res) => {
+  const { token, record } = await apiTokenService.createApiToken({
+    account: req.account,
+    name: req.body.name,
+    expiresInDays: req.body.expires_in_days,
+  });
+
+  res.status(201).json({
+    data: {
+      api_token: record.toPublicJson(),
+      // The only time this string exists outside the caller's own machine.
+      // Nothing stores it, so nothing can show it again.
+      token,
+      warning: 'Copy this token now. It cannot be shown again.',
+    },
+  });
+});
+
+/**
+ * GET /auth/api_tokens
+ * Lists this account's machine credentials, without any token material.
+ */
+const listApiTokens = asyncHandler(async (req, res) => {
+  const tokens = await apiTokenService.listApiTokens(req.account.id);
+  res.json({ data: { api_tokens: tokens } });
+});
+
+/**
+ * DELETE /auth/api_tokens/:tokenId
+ * Revokes one, which stops working on the next request rather than at expiry.
+ */
+const revokeApiToken = asyncHandler(async (req, res) => {
+  await apiTokenService.revokeApiToken({
+    accountId: req.account.id,
+    tokenId: req.params.tokenId,
+  });
+  res.status(204).send();
+});
+
 module.exports = {
   availability,
   register,
@@ -191,4 +235,7 @@ module.exports = {
   listSessions,
   revokeSession,
   revokeOtherSessions,
+  createApiToken,
+  listApiTokens,
+  revokeApiToken,
 };
