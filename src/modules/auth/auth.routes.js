@@ -111,4 +111,26 @@ router.delete(
   controller.revokeApiToken,
 );
 
+/*
+ * API usage.
+ *
+ * What has been done on this account, and by which credential. Readable with
+ * either kind of credential: a script checking its own footprint is a
+ * legitimate use, and nothing here is a secret from the account holder.
+ */
+
+router.get(
+  '/usage',
+  authenticate,
+  validate(schemas.usageQuerySchema, 'query'),
+  controller.listUsage,
+);
+
+router.get(
+  '/usage/summary',
+  authenticate,
+  validate(schemas.usageSummaryQuerySchema, 'query'),
+  controller.usageSummary,
+);
+
 module.exports = router;

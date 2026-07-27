@@ -197,6 +197,24 @@ const config = Object.freeze({
     embeddingBackfillLimit: readInteger('AGENTS_CHAT_EMBED_BATCH', 50, { min: 1, max: 500 }),
   }),
 
+  usage: Object.freeze({
+    /**
+     * Whether authenticated requests are recorded at all.
+     *
+     * On by default, because the point of the record is to be there when
+     * somebody asks what happened, and one turned on afterwards answers
+     * nothing about the past.
+     */
+    enabled: readBoolean('API_USAGE_LOG', true),
+    /**
+     * How long entries are kept.
+     *
+     * Configuration rather than a constant: how long this has to be kept is a
+     * question about somebody's obligations, not about the code.
+     */
+    retentionDays: readInteger('API_USAGE_RETENTION_DAYS', 90, { min: 1, max: 3650 }),
+  }),
+
   workers: Object.freeze({
     poolSize: readInteger('WORKER_POOL_SIZE', isTest ? 1 : 2, { min: 1, max: 16 }),
     taskTimeoutMs: readInteger('WORKER_TASK_TIMEOUT_MS', 300000, { min: 1000 }),
