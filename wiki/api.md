@@ -633,7 +633,9 @@ replaces that, and nothing rewrites a chosen name afterwards.
 | `check_project_languages` | Master language, per file sources and targets | Project access |
 | `get_project_description` | Reads a description | Project access |
 | `update_project_description` | Replaces a description | `ADMIN` in an organization |
-| `create_project` | Creates a **new** project, uploading the attachment when present | `ADMIN` in an organization |
+| `create_project` | Creates a **new** project, with an optional platform and model, uploading the attachment when present | `ADMIN` in an organization |
+| `list_platforms` | The platforms and models a project may use, and which the account pays for | Namespace access |
+| `update_project_ai` | Sets the platform and model a project translates with | `ADMIN` in an organization |
 | `upload_file` | Uploads the attachment into a project that **already exists** | `ADMIN` in an organization |
 | `list_files` | Lists a project's files and their status | Project access |
 | `add_languages` | Adds targets to one project, several, or all | `ADMIN` in an organization |
@@ -657,6 +659,19 @@ project to get a file into it.
 
 `add_languages` touches at most 25 projects per call. Files that cannot take a
 language are reported in `skipped` with a reason rather than failing the rest.
+
+`list_platforms` reports the whole registry, so a model naming anything outside
+it is wrong and the assistant can say which names exist rather than guessing.
+Each entry carries `has_credential`, which is whether the account holds an
+active key for that platform, and `translates`, which is false for the offline
+mock.
+
+`update_project_ai` accepts a platform, a model, or both; naming only a platform
+uses that platform's default model. An unknown name comes back as a refusal
+carrying the catalogue, so the correction costs no extra turn. Setting a
+platform the account cannot pay for succeeds, exactly as the settings page
+allows, and returns a `warning` the assistant relays. Existing translations are
+never redone by the change.
 
 ### `GET /namespaces/:namespace/chat/sessions`
 

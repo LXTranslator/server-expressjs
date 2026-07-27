@@ -265,6 +265,20 @@ The ceiling is `AGENTS_CHAT_REPEAT`, default five. Reaching it ends the turn
 with an honest answer rather than another paid call, because a loop whose only
 brake is the model deciding it is finished has no brake.
 
+### What it can change
+
+The tools cover the settings a person would otherwise go and click: a project's
+name, description, languages, files, and the platform and model it translates
+on. That last one matters more than it looks. Without it the assistant would
+answer a request to use a particular model by writing the request into the
+description, which sets nothing and leaves the project translating on whatever
+it defaulted to, while reading as though it had been done.
+
+`list_platforms` exists for the same reason. The registry is a fixed allowlist,
+so a model asked for a platform or a model it half remembers can check rather
+than guess, and a refusal comes back with the catalogue attached so the
+correction costs no extra turn.
+
 ### The model has no authority
 
 Every tool resolves access itself, on every call, against the authenticated
