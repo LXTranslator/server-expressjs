@@ -10,6 +10,7 @@ const {
   consumeActionToken,
   revokeActionTokens,
 } = require('../auth/token.service');
+const sessionService = require('../auth/session.service');
 const { ConflictError, UnauthorizedError } = require('../../core/errors');
 
 /**
@@ -122,9 +123,10 @@ async function updateEmail(account, input) {
  *
  * @param {object} account Authenticated account.
  * @param {{token: string, password: string}} input Validated payload.
+ * @param {string} [currentSessionId] Session making the change, which is kept.
  * @returns {Promise<{message: string}>}
  */
-async function updatePassword(account, input) {
+async function updatePassword(account, input, currentSessionId) {
   await redeemSettingsToken(account, input.token);
 
   const passwordHash = await bcrypt.hash(input.password, config.security.bcryptRounds);
@@ -139,8 +141,23 @@ async function updatePassword(account, input) {
   // before this change cannot be used afterwards.
   await revokeActionTokens(account.id);
 
-  logger.info('Password changed from settings.', { accountId: account.id });
-  return { message: 'Your password has been updated.' };
+  // And every session but this one. Changing a password is how somebody ends
+  // access they no longer want; leaving other sessions alive would mean the
+  // password changed and nothing else did. The session asking is kept, so the
+  // person is not signed out of the screen they just used.
+  const revoked = await sessionService.revokeAll({
+    accountId: account.id,
+    exceptId: currentSessionId,
+    kind: 'SESSION',
+  });
+
+  logger.info('Password changed from settings.', { accountId: account.id, revoked });
+  return {
+    message:
+      revoked === 0
+        ? 'Your password has been updated.'
+        : `Your password has been updated. ${revoked} other session${revoked === 1 ? '' : 's'} signed out.`,
+  };
 }
 
 /**

@@ -63,7 +63,7 @@ router.patch(
   '/password',
   validate(schemas.updatePasswordSchema),
   asyncHandler(async (req, res) => {
-    const result = await service.updatePassword(req.account, req.body);
+    const result = await service.updatePassword(req.account, req.body, req.session?.id);
     res.json({ data: result });
   }),
 );

@@ -13,6 +13,12 @@ description: Session handling, credential storage, lockout and single use token 
 2. **Sessions are JWT bearer tokens.** Signed HS256 with issuer and audience
    both asserted on verification. Algorithm is pinned to `['HS256']`, which is
    what prevents an `alg: none` or algorithm confusion attack.
+3. **A valid signature is not enough.** Every session also has a row in
+   `account_sessions`, and `authenticate` requires that row to still be live.
+   This is what makes revocation possible: a signed token cannot be taken back,
+   so signing out, ending one device and "sign out everywhere else" all work by
+   marking a row rather than by hoping a client forgets something. A token whose
+   row is revoked or expired is a 401 however well it verifies.
 3. **The account is re-read on every request.** `src/middleware/authenticate.js`
    loads the row rather than trusting the token claims, so a deleted or locked
    account loses access immediately instead of when its token expires.
@@ -32,7 +38,18 @@ description: Session handling, credential storage, lockout and single use token 
    password reset, and a settings token cannot be redeemed by another account's
    session.
 9. **Changing a password invalidates everything else.** `credentialsChangedAt`
-   moves forward and every outstanding action token is revoked.
+   moves forward, every outstanding action token is revoked, and every other
+   session ends. A settings change keeps the session that made it, so the person
+   is not signed out of the screen they just used. A reset keeps nothing at all,
+   because a reset is the flow for a password somebody may have lost control of.
+10. **Many sessions per account is the ordinary case.** A laptop, a phone and a
+   second browser profile are three rows. Nothing may assume one session per
+   account, and revoking one must never touch another.
+11. **A session stores a digest, never a token.** Same rule as the action token
+   ledger, and it matters more here because these live longer. What is stored
+   alongside it is deliberately minimal: the client string, so a list is
+   actionable, and not the address, which locates a person and answers the same
+   question worse.
 
 ## When adding an authenticated route
 
