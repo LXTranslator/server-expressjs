@@ -10,6 +10,7 @@ const accountKeyService = require('../accountKeys/accountKey.service');
 const exportFormatService = require('../exportFormats/exportFormat.service');
 const { listProviders, getProvider } = require('../../infrastructure/ai/providers');
 const { File } = require('../../infrastructure/database/models');
+const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 const { langCodeSchema } = require('../files/file.schemas');
 const exportFormatSchemas = require('../exportFormats/exportFormat.schemas');
 const { LEAF_SHAPES } = require('../../infrastructure/database/models/exportFormat');
@@ -56,6 +57,14 @@ const targetLangsSchema = z
 
 /** Projects one call may touch, so "all at once" cannot become unbounded work. */
 const MAX_PROJECTS_PER_CALL = 25;
+
+/**
+ * Languages one call may add, matching the bound the argument schema applies.
+ *
+ * An inferred set has to obey the same ceiling a named one does, or "all
+ * languages" would be a way around the limit rather than a convenience.
+ */
+const MAX_LANGS_PER_CALL = 50;
 
 /**
  * Wraps a successful result.
@@ -206,6 +215,49 @@ async function collectProjectTargets(context, args) {
   }
 
   return { identifiers, failure: null };
+}
+
+/**
+ * Gathers every target language already in use where the caller can act.
+ *
+ * This is what "all languages" has to mean. The interface offers a catalogue of
+ * well over a hundred locales, and adding them all would send every string of
+ * every file to a provider in every one of them, from a single sentence typed
+ * into a chat box. That is why the language list is capped at fifty in the
+ * first place.
+ *
+ * The useful reading, and the bounded one, is "the languages we already
+ * translate into": bring this project up to the set the others already have.
+ * Gathered from every namespace the caller belongs to rather than from the
+ * projects being changed, so it still answers for a project that is empty,
+ * which is exactly when somebody asks.
+ *
+ * @param {object} context Tool context.
+ * @returns {Promise<string[]>} Distinct locale codes, sorted.
+ */
+async function collectConfiguredLangs(context) {
+  const namespaces = await namespaceService.listAccessibleNamespaces(context.actor);
+  const projectIds = [];
+
+  for (const namespace of namespaces) {
+    const projects = await projectService.listProjects(namespace.id);
+    for (const project of projects) projectIds.push(project.id);
+  }
+
+  if (projectIds.length === 0) return [];
+
+  const files = await File.findAll({ where: { projectId: projectIds } });
+  const langs = new Set();
+
+  for (const file of files) {
+    for (const code of file.targetLangCodes) {
+      // The master is never a target: a file already holds the English it was
+      // normalised into, and asking for it would translate English to English.
+      if (code !== MASTER_LANG_CODE) langs.add(code);
+    }
+  }
+
+  return [...langs].sort();
 }
 
 const TOOLS = [
@@ -863,14 +915,20 @@ const TOOLS = [
   {
     name: 'add_languages',
     description:
-      'Add target languages to the files of one project, several projects, or every project in the current namespace. Languages already present are left alone.',
+      'Add target languages to the files of one project, several projects, or every project in the current namespace. Add one locale, a list of them, or every locale already in use elsewhere. Languages already present are left alone.',
     parameters: {
       type: 'object',
       properties: {
         target_langs: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Locales to add, such as ["th_th", "ja_jp"].',
+          description:
+            'Locales to add. One for a single language, several for a batch, such as ["th_th", "ja_jp"]. Omit when using all_langs.',
+        },
+        all_langs: {
+          type: 'boolean',
+          description:
+            'Add every language already in use across the projects the person can reach, bringing these projects up to that set. Not every locale that exists.',
         },
         project_ids: {
           type: 'array',
@@ -882,16 +940,21 @@ const TOOLS = [
           description: 'Add to every project in the current namespace.',
         },
       },
-      required: ['target_langs'],
+      required: [],
       additionalProperties: false,
     },
     schema: z
       .object({
-        target_langs: targetLangsSchema,
+        target_langs: targetLangsSchema.optional(),
+        all_langs: z.boolean().optional(),
         project_ids: z.array(z.union([z.number(), z.string()])).max(MAX_PROJECTS_PER_CALL).optional(),
         all_projects: z.boolean().optional(),
       })
-      .strict(),
+      .strict()
+      .refine(
+        (value) => value.target_langs !== undefined || value.all_langs === true,
+        { message: 'Name the languages to add, or ask for all of them.' },
+      ),
 
     /**
      * @param {object} args Validated arguments.
@@ -899,6 +962,30 @@ const TOOLS = [
      * @returns {Promise<object>} Tool result.
      */
     async handler(args, context) {
+      let targetLangs = args.target_langs ?? [];
+
+      if (args.all_langs === true) {
+        targetLangs = await collectConfiguredLangs(context);
+
+        if (targetLangs.length === 0) {
+          return fail('No language is in use anywhere yet, so there is no set to copy.', {
+            instruction:
+              'Ask the person which locales they want, since there is nothing to infer them from.',
+          });
+        }
+
+        if (targetLangs.length > MAX_LANGS_PER_CALL) {
+          return fail(
+            `That would add ${targetLangs.length} languages, more than ${MAX_LANGS_PER_CALL} in one call.`,
+            {
+              languages: targetLangs,
+              instruction:
+                'Tell the person how many there are and ask which of them to add.',
+            },
+          );
+        }
+      }
+
       let identifiers = args.project_ids ?? [];
 
       if (args.all_projects === true) {
@@ -950,7 +1037,7 @@ const TOOLS = [
               project: access.project,
               namespace: access.namespace,
               actor: context.actor,
-              targetLangs: args.target_langs,
+              targetLangs,
             });
             applied.push({
               project_id: access.project.id,
@@ -972,14 +1059,17 @@ const TOOLS = [
       return ok({
         applied,
         skipped,
+        // Named back deliberately when the set was inferred: "all languages"
+        // has to resolve to something the person can see and disagree with.
+        requested_langs: targetLangs,
         message:
           applied.length === 0
             ? 'No file was changed.'
-            : `Started translating ${applied.length} file(s) into the new languages.`,
+            : `Started translating ${applied.length} file(s) into ${targetLangs.join(', ')}.`,
         instruction:
           applied.length === 0
             ? 'Explain why nothing changed, using the reasons listed.'
-            : 'Tell the person the translation runs in the background.',
+            : 'Name the languages that were added and tell the person the translation runs in the background.',
       });
     },
   },

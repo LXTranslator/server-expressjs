@@ -638,7 +638,7 @@ replaces that, and nothing rewrites a chosen name afterwards.
 | `update_project_ai` | Sets the platform and model one project, several, or all of them translate with | `ADMIN` in an organization |
 | `upload_file` | Uploads the attachment into a project that **already exists** | `ADMIN` in an organization |
 | `list_files` | Lists a project's files and their status | Project access |
-| `add_languages` | Adds targets to one project, several, or all | `ADMIN` in an organization |
+| `add_languages` | Adds one language, several, or every one already in use, to one project, several, or all | `ADMIN` in an organization |
 | `list_export_formats` | The download shapes this namespace offers, each with a sample | Namespace access |
 | `create_export_format` | Creates a download shape for the namespace | `ADMIN` in an organization |
 | `find_chat` | Searches the caller's own past conversations | Namespace access |
@@ -659,8 +659,20 @@ take the same single attachment, so an attached file can reach either a new
 project or an existing one, and neither ever requires deleting or recreating a
 project to get a file into it.
 
-`add_languages` touches at most 25 projects per call. Files that cannot take a
-language are reported in `skipped` with a reason rather than failing the rest.
+`add_languages` takes `target_langs` for one locale or several, or `all_langs`
+to add every locale already in use across the projects the caller can reach.
+
+That last one is deliberately not "every locale that exists". The interface
+offers well over a hundred, and adding them all would send every string of every
+file to a provider in each of them from a single sentence. `all_langs` means the
+set already in use, which is what somebody bringing a new project up to the
+others actually wants, and it obeys the same fifty language ceiling a named list
+does. The resolved set comes back as `requested_langs`, so what "all" meant is
+visible rather than assumed, and it is gathered only from namespaces the caller
+belongs to.
+
+It touches at most 25 projects per call. Files that cannot take a language are
+reported in `skipped` with a reason rather than failing the rest.
 
 `list_platforms` reports the whole registry, so a model naming anything outside
 it is wrong and the assistant can say which names exist rather than guessing.
