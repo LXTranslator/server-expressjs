@@ -313,22 +313,48 @@ async function loadForAccount(accountId, origin) {
  * @returns {Promise<string|null>} A platform name, or null when nothing is configured.
  */
 async function findConfiguredProvider({ namespaceAccountId, actorAccountId }) {
+  const [first] = await listConfiguredProviders({ namespaceAccountId, actorAccountId });
+  return first ?? null;
+}
+
+/**
+ * Lists every platform the account can pay for, in the order the chain walks.
+ *
+ * The set rather than the first, which is what an interface needs to answer
+ * "which platforms may I choose" without offering one that nothing can pay for.
+ *
+ * Nothing is decrypted, for the same reason as above: a platform name is not a
+ * secret, and the one function allowed to decrypt should stay the one that is
+ * about to make a provider call.
+ *
+ * @param {object} params Parameters.
+ * @param {string} params.namespaceAccountId Namespace being acted in.
+ * @param {string} [params.actorAccountId] Person acting.
+ * @returns {Promise<string[]>} Distinct platform names, highest priority first.
+ */
+async function listConfiguredProviders({ namespaceAccountId, actorAccountId }) {
   const accountIds = [namespaceAccountId, actorAccountId].filter(
     (id, index, all) => typeof id === 'string' && all.indexOf(id) === index,
   );
 
+  const found = [];
+
   for (const accountId of accountIds) {
-    const row = await AccountApiKey.findOne({
+    const rows = await AccountApiKey.findAll({
       where: { accountId, isActive: true },
       order: [['priority_order', 'ASC'], ['created_at', 'ASC']],
     });
 
-    // A stored platform is still checked against the registry: a row written
-    // before a platform was withdrawn must not select an adapter that is gone.
-    if (row !== null && getProvider(row.provider) !== null) return row.provider;
+    for (const row of rows) {
+      // A stored platform is still checked against the registry: a row written
+      // before a platform was withdrawn must not select an adapter that is gone.
+      if (getProvider(row.provider) !== null && !found.includes(row.provider)) {
+        found.push(row.provider);
+      }
+    }
   }
 
-  return null;
+  return found;
 }
 
 /**
@@ -445,6 +471,7 @@ module.exports = {
   reorderApiKeys,
   removeApiKey,
   findConfiguredProvider,
+  listConfiguredProviders,
   loadDecryptedKeys,
   loadEmbeddingKey,
   recordKeyAttempts,

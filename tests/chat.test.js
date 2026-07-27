@@ -147,9 +147,11 @@ describe('the assistant', () => {
         'find_chat',
         'get_project_description',
         'list_files',
+        'list_platforms',
         'list_projects',
         'stop',
         'switch_namespace',
+        'update_project_ai',
         'update_project_description',
         'upload_file',
       ]);
@@ -264,6 +266,218 @@ describe('the assistant', () => {
       expect(result.master_lang_code).toBe('en_us');
       expect(result.target_lang_codes.sort()).toEqual(['ja_jp', 'th_th']);
       expect(result.files[0].filename).toBe('read_case.json');
+    });
+  });
+
+  describe('setting the AI platform', () => {
+    /*
+     * Before these tools existed the assistant answered "there is no tool in
+     * LXTranslator to configure an AI model or provider" and wrote the request
+     * into the project description instead, which set nothing and left the
+     * project translating on whatever it had defaulted to.
+     */
+
+    it('lists the platforms and models that actually exist', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'list_platforms', arguments: {} },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+
+      const openrouter = result.platforms.find((entry) => entry.name === 'openrouter');
+      expect(openrouter.models).toContain('deepseek/deepseek-v4-flash');
+      expect(openrouter.has_credential).toBe(false);
+
+      // The offline platform is listed as one that does not translate, so the
+      // assistant can warn rather than presenting it as an ordinary choice.
+      expect(result.platforms.find((entry) => entry.name === 'mock').translates).toBe(false);
+    });
+
+    it('creates a project on the platform and model that were asked for', async () => {
+      // The example that prompted this: "Create new project as Minecraft and
+      // set ai as openrouter model deepseek/deepseek-v4-flash".
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_project',
+          arguments: {
+            name: 'minecraft',
+            ai_provider: 'openrouter',
+            ai_model: 'deepseek/deepseek-v4-flash',
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.project.ai_provider).toBe('openrouter');
+      expect(result.project.ai_model).toBe('deepseek/deepseek-v4-flash');
+    });
+
+    it('changes the platform of a project that already exists', async () => {
+      const project = await createProject(app, token, namespace, { name: 'retargeted' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: {
+            project_id: project.id,
+            ai_provider: 'openrouter',
+            ai_model: 'deepseek/deepseek-v4-pro',
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.project.ai_model).toBe('deepseek/deepseek-v4-pro');
+      // Retranslation is not implied by a settings change, and saying so is the
+      // difference between a helpful answer and a misleading one.
+      expect(result.instruction).toMatch(/not redone/i);
+    });
+
+    it('uses the platform default when only a platform is named', async () => {
+      const project = await createProject(app, token, namespace, { name: 'default_model' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: project.id, ai_provider: 'anthropic' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.project.ai_model).toBe('claude-opus-5');
+    });
+
+    it('warns that nothing on the account pays for the platform', async () => {
+      const project = await createProject(app, token, namespace, { name: 'unpaid' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: project.id, ai_provider: 'openrouter' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toMatch(/no active openrouter credential/i);
+    });
+
+    it('says nothing about payment once a credential exists', async () => {
+      await request(app)
+        .post(`/api/v1/namespaces/${namespace}/settings/ai_keys`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ provider: 'openrouter', api_key: 'openrouter_key_for_tools_1234' })
+        .expect(201);
+
+      const project = await createProject(app, token, namespace, { name: 'paid_for' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: project.id, ai_provider: 'openrouter' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toBeUndefined();
+
+      await AccountApiKey.destroy({ where: { accountId: account.id } });
+    });
+
+    it('warns that the offline platform translates nothing', async () => {
+      const project = await createProject(app, token, namespace, { name: 'offline_target' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: project.id, ai_provider: 'mock' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toMatch(/translates nothing/i);
+    });
+
+    it('refuses a model the platform does not offer, and says what it does', async () => {
+      const project = await createProject(app, token, namespace, { name: 'bad_model' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: project.id, ai_provider: 'openrouter', ai_model: 'gpt-9' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not offered by OpenRouter/);
+      // The catalogue comes back with the refusal rather than after another
+      // paid turn spent asking for it.
+      expect(result.platforms.find((entry) => entry.name === 'openrouter').models).toContain(
+        'deepseek/deepseek-v4-flash',
+      );
+    });
+
+    it('refuses a platform outside the registry', async () => {
+      const project = await createProject(app, token, namespace, { name: 'bad_platform' });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: project.id, ai_provider: 'deepseek' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not supported/);
+    });
+
+    it('refuses a call that names neither a platform nor a model', async () => {
+      const project = await createProject(app, token, namespace, { name: 'names_nothing' });
+
+      const result = await dispatchTool(
+        { id: '1', name: 'update_project_ai', arguments: { project_id: project.id } },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not usable/);
+    });
+
+    it('refuses to retarget a project in a namespace the caller cannot reach', async () => {
+      const outsider = await registerAccount(app, {
+        user_id: 'ai_tool_outsider',
+        email: 'ai_tool_outsider@example.test',
+      });
+      const theirs = await createProject(app, outsider.token, outsider.account.user_id, {
+        name: 'not_yours',
+      });
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'update_project_ai',
+          arguments: { project_id: theirs.id, ai_provider: 'openrouter' },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
     });
   });
 

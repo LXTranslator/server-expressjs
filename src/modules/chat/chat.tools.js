@@ -6,6 +6,8 @@ const { AppError } = require('../../core/errors');
 const namespaceService = require('../namespaces/namespace.service');
 const projectService = require('../projects/project.service');
 const fileService = require('../files/file.service');
+const accountKeyService = require('../accountKeys/accountKey.service');
+const { listProviders, getProvider } = require('../../infrastructure/ai/providers');
 const { File } = require('../../infrastructure/database/models');
 const { langCodeSchema } = require('../files/file.schemas');
 const embeddingService = require('./embedding.service');
@@ -112,6 +114,36 @@ function requireAdmin(access) {
   }
 }
 
+/**
+ * Reports whether the account can actually pay for a platform.
+ *
+ * A project may name any platform in the registry, exactly as the settings page
+ * allows, so this never refuses. It exists so the assistant can say "set, but
+ * nothing here pays for it yet" instead of letting somebody discover that when
+ * a translation fails.
+ *
+ * @param {object} context Tool context.
+ * @param {string} providerName Platform the project will use.
+ * @returns {Promise<string|null>} A warning to relay, or null when it is paid for.
+ */
+async function warnUnpaidPlatform(context, providerName) {
+  const provider = getProvider(providerName);
+  if (provider === null) return null;
+
+  if (provider.requiresNetwork === false) {
+    return `${provider.label} contacts no vendor. It returns the English text with a locale marker in front of it, so it translates nothing.`;
+  }
+
+  const configured = await accountKeyService.listConfiguredProviders({
+    namespaceAccountId: context.namespace.id,
+    actorAccountId: context.actor.id,
+  });
+
+  if (configured.includes(providerName)) return null;
+
+  return `No active ${provider.label} credential is on this account, so translating will fall back to the built in offline platform or fail. Add one in the namespace AI settings.`;
+}
+
 const TOOLS = [
   {
     name: 'switch_namespace',
@@ -200,6 +232,16 @@ const TOOLS = [
           items: { type: 'string' },
           description: 'Locales to translate the attached file into, such as ["th_th"].',
         },
+        ai_provider: {
+          type: 'string',
+          description:
+            'Platform the project translates on, such as openrouter. Omit to use the platform the account already holds a credential for. Call list_platforms if unsure.',
+        },
+        ai_model: {
+          type: 'string',
+          description:
+            'Model on that platform, such as deepseek/deepseek-v4-flash. Omit for the platform default.',
+        },
       },
       required: ['name'],
       additionalProperties: false,
@@ -210,6 +252,8 @@ const TOOLS = [
         description: z.string().trim().max(500).optional(),
         source_lang: langCodeSchema.optional(),
         target_langs: targetLangsSchema.optional(),
+        ai_provider: z.string().trim().max(50).optional(),
+        ai_model: z.string().trim().max(100).optional(),
       })
       .strict(),
 
@@ -240,7 +284,12 @@ const TOOLS = [
       try {
         project = await projectService.createProject(
           context.namespace.id,
-          { name: args.name, description: args.description },
+          {
+            name: args.name,
+            description: args.description,
+            ...(args.ai_provider === undefined ? {} : { ai_provider: args.ai_provider }),
+            ...(args.ai_model === undefined ? {} : { ai_model: args.ai_model }),
+          },
           { actorAccountId: context.actor.id },
         );
       } catch (error) {
@@ -253,10 +302,19 @@ const TOOLS = [
         throw error;
       }
 
+      // The platform is part of what was created, so it is reported rather than
+      // left for the person to go and check.
+      const platform = {
+        ai_provider: project.ai_provider,
+        ai_model: project.ai_model,
+      };
+      const warning = await warnUnpaidPlatform(context, project.ai_provider);
+
       if (context.attachment === null) {
         return ok({
-          project: { id: project.id, name: project.name },
-          message: `Created the project "${project.name}".`,
+          project: { id: project.id, name: project.name, ...platform },
+          ...(warning === null ? {} : { warning }),
+          message: `Created "${project.name}", translating on ${project.ai_provider} using ${project.ai_model}.`,
           instruction:
             'Tell the person the project is empty, and that attaching a JSON locale file to a message lets you upload it with the upload_file tool. The project never needs recreating for that.',
         });
@@ -265,7 +323,8 @@ const TOOLS = [
       const targetLangs = args.target_langs ?? [];
       if (targetLangs.length === 0) {
         return ok({
-          project: { id: project.id, name: project.name },
+          project: { id: project.id, name: project.name, ...platform },
+          ...(warning === null ? {} : { warning }),
           message: `Created the project "${project.name}" but uploaded nothing.`,
           instruction: 'Ask the person which languages the attached file should be translated into.',
         });
@@ -282,10 +341,11 @@ const TOOLS = [
         });
 
         return ok({
-          project: { id: project.id, name: project.name },
+          project: { id: project.id, name: project.name, ...platform },
           file: { id: file.id, filename: file.filename, status: file.status },
           target_langs: targetLangs,
-          message: `Created "${project.name}" and started translating ${file.filename}.`,
+          ...(warning === null ? {} : { warning }),
+          message: `Created "${project.name}" and started translating ${file.filename} on ${project.ai_provider}.`,
           instruction:
             'Tell the person translation is running in the background and the file status will become READY.',
         });
@@ -534,6 +594,127 @@ const TOOLS = [
         project: { id: project.id, name: project.name },
         description: project.description,
         message: `Updated the description of "${project.name}".`,
+      });
+    },
+  },
+
+  {
+    name: 'list_platforms',
+    description:
+      'List the AI platforms and models a project may be set to, and say which ones this account holds a credential for. Call this before setting a platform or model that was named from memory.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    schema: z.object({}).strict(),
+
+    /**
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const configured = await accountKeyService.listConfiguredProviders({
+        namespaceAccountId: context.namespace.id,
+        actorAccountId: context.actor.id,
+      });
+
+      // The registry is the whole truth about what exists. A model naming
+      // anything outside it is wrong, and saying so precisely beats guessing.
+      const platforms = listProviders().map((provider) => ({
+        name: provider.name,
+        label: provider.label,
+        default_model: provider.default_model,
+        models: provider.models,
+        translates: provider.requires_network,
+        has_credential: configured.includes(provider.name),
+      }));
+
+      return ok({
+        platforms,
+        message: 'These are the platforms and models a project may use.',
+        instruction:
+          'Only these names exist. If the person asked for a model that is not listed, say so and offer the closest one rather than setting something else. A platform with has_credential false can be set but nothing on this account pays for it yet.',
+      });
+    },
+  },
+
+  {
+    name: 'update_project_ai',
+    description:
+      'Set the AI platform and model a project translates with, for example openrouter and deepseek/deepseek-v4-flash. Changing the platform without naming a model uses that platform default.',
+    parameters: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to change.' },
+        ai_provider: {
+          type: 'string',
+          description: 'Platform name, such as openrouter. Omit to keep the current one.',
+        },
+        ai_model: {
+          type: 'string',
+          description:
+            'Model on that platform, such as deepseek/deepseek-v4-flash. Omit for the platform default.',
+        },
+      },
+      required: ['project_id'],
+      additionalProperties: false,
+    },
+    schema: z
+      .object({
+        project_id: z.union([z.number(), z.string()]),
+        ai_provider: z.string().trim().max(50).optional(),
+        ai_model: z.string().trim().max(100).optional(),
+      })
+      .refine(
+        (value) => value.ai_provider !== undefined || value.ai_model !== undefined,
+        { message: 'Name a platform, a model, or both.' },
+      ),
+
+    /**
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const { access, failure } = await resolveProject(context, args.project_id);
+      if (failure !== null) return failure;
+
+      const denied = requireAdmin(access);
+      if (denied !== null) return denied;
+
+      let project;
+      try {
+        project = await projectService.updateProject(access.project, {
+          ...(args.ai_provider === undefined ? {} : { ai_provider: args.ai_provider }),
+          ...(args.ai_model === undefined ? {} : { ai_model: args.ai_model }),
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          // An unknown platform or model is the ordinary mistake here, so the
+          // catalogue comes back with the refusal rather than after another turn.
+          return fail(error.message, {
+            platforms: listProviders().map((provider) => ({
+              name: provider.name,
+              models: provider.models,
+            })),
+            instruction:
+              'Tell the person that name is not offered, and pick from the platforms listed here.',
+          });
+        }
+        throw error;
+      }
+
+      const warning = await warnUnpaidPlatform(context, project.ai_provider);
+
+      return ok({
+        project: {
+          id: project.id,
+          name: project.name,
+          ai_provider: project.ai_provider,
+          ai_model: project.ai_model,
+        },
+        ...(warning === null ? {} : { warning }),
+        message: `"${project.name}" now translates on ${project.ai_provider} using ${project.ai_model}.`,
+        instruction:
+          'Existing translations are not redone by this change. Say so, and offer to re translate if the person wants the new model applied to what is already there.',
       });
     },
   },
