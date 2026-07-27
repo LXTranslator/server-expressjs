@@ -525,20 +525,29 @@ async function retranslateKeys({ file, project, namespace, actor, keyIds, target
  * and any manual correction all survive. Only names absent from the file are
  * translated, into every locale the file already carries.
  *
+ * The document arrives as JSON text rather than as an upload, because it does
+ * not always arrive as a file. An upload hands over what was dropped on the
+ * editor; the assistant hands over keys somebody typed into a sentence. Both
+ * are the same document by the time they reach here, and validating the bytes
+ * belongs to whichever caller is holding them.
+ *
+ * Text rather than a parsed object, because that is what the pipeline takes:
+ * parsing is worker thread work, and handing it an object here would only mean
+ * serialising it again on the way.
+ *
  * @param {object} params Parameters.
  * @param {object} params.file File model instance.
  * @param {object} params.project Owning project.
- * @param {object} params.upload Multer file descriptor, already sanitised.
+ * @param {object} params.namespace Namespace owning the project.
+ * @param {object} params.actor Account performing the merge.
+ * @param {string} params.content Locale document as JSON text.
  * @returns {Promise<{file: object, existingKeyCount: number, processing: Promise<void>}>}
- * @throws {BadRequestError} When the document is not a JSON object.
  */
-async function mergeKeys({ file, project, namespace, actor, upload }) {
-  const content = assertJsonObject(upload.buffer);
+async function mergeKeys({ file, project, namespace, actor, content }) {
   const { keyNames } = await buildMasterDocument(file.id);
 
   logger.info('Merging keys into file.', {
     fileId: file.id,
-    bytes: upload.buffer.length,
     existingKeyCount: keyNames.length,
   });
 

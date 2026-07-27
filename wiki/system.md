@@ -306,6 +306,30 @@ person sees the document they will get rather than a description of it, and the
 preview cannot drift from the download because it is not a second
 implementation of it.
 
+### Adding to a file that already exists
+
+`add_keys` is the assistant's route to the merge the editor has always offered:
+new names are added to a file, keeping its identifier, while every key already
+there keeps its master text, its fingerprint and its translations. Only the new
+names are sent to a provider, in the languages the file already carries.
+
+The keys come from an attached document or from an argument, because both are
+how people ask. "Here is the updated file" and "add menu.start, it says Start"
+are the same request, and the second was previously impossible to act on: a
+tool taking only an upload cannot accept keys typed into a sentence.
+
+Both arrive at the same service as JSON text, so typed keys take exactly the
+path an uploaded document takes rather than a second one that could drift from
+it. Sending both at once is refused rather than guessed at, since acting on one
+would silently ignore the other.
+
+The absence of this tool was not neutral. Asked to add a key, the assistant
+concluded from its catalogue that the application could not do it, and advised
+uploading a replacement file, which would have created a second file and paid
+to translate every string in it again. A missing tool reads to a model as a
+missing capability, so a capability the product has and the tools do not is a
+defect rather than an omission.
+
 ### Handing over a file
 
 `export_file` answers "give me the file" with a download control on the answer
