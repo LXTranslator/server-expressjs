@@ -238,10 +238,11 @@ const TOOLS = [
 
       let project;
       try {
-        project = await projectService.createProject(context.namespace.id, {
-          name: args.name,
-          description: args.description,
-        });
+        project = await projectService.createProject(
+          context.namespace.id,
+          { name: args.name, description: args.description },
+          { actorAccountId: context.actor.id },
+        );
       } catch (error) {
         if (error instanceof AppError) {
           return fail(error.message, {

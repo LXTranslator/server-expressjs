@@ -362,7 +362,9 @@ router.post(
     if (req.namespace.type === 'ORG') {
       namespaceService.assertRole(req.namespaceRole, 'ADMIN');
     }
-    const project = await projectService.createProject(req.namespace.id, req.body);
+    const project = await projectService.createProject(req.namespace.id, req.body, {
+      actorAccountId: req.account.id,
+    });
     res.status(201).json({ data: { project } });
   }),
 );

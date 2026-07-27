@@ -44,6 +44,163 @@ describe('project identity', () => {
     await teardownTestApp();
   });
 
+  describe('the platform a new project starts on', () => {
+    /*
+     * The default platform is not a cosmetic choice.
+     *
+     * The configured default is the offline mock, which hands back the English
+     * text with a locale marker in front of it and still reports the file as
+     * finished. An account that has added a real credential and then creates a
+     * project must not get that: the credential is the clearest statement there
+     * is about which platform this account translates on.
+     *
+     * These post directly rather than through the `createProject` helper, which
+     * always names a platform and so can never exercise the default.
+     */
+
+    /**
+     * Registers an account with one active credential.
+     *
+     * @param {string} handle Account identifier.
+     * @param {string} provider Platform the credential is for.
+     * @returns {Promise<object>} The registration.
+     */
+    async function accountWithKey(handle, provider) {
+      const registered = await registerAccount(app, {
+        user_id: handle,
+        email: `${handle}@example.test`,
+      });
+
+      await request(app)
+        .post(`/api/v1/namespaces/${registered.account.user_id}/settings/ai_keys`)
+        .set('Authorization', `Bearer ${registered.token}`)
+        .send({ provider, api_key: `${provider}_key_for_${handle}_1234` })
+        .expect(201);
+
+      return registered;
+    }
+
+    /**
+     * Creates a project naming only what the caller passes.
+     *
+     * @param {string} token Session token.
+     * @param {string} namespace Namespace handle.
+     * @param {object} body Payload.
+     * @returns {Promise<object>} The created project.
+     */
+    async function create(token, namespace, body) {
+      const response = await request(app)
+        .post(`/api/v1/namespaces/${namespace}/projects`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(201);
+
+      return response.body.data.project;
+    }
+
+    it('follows the credential the account actually holds', async () => {
+      const registered = await accountWithKey('platform_default_user', 'openrouter');
+
+      const project = await create(registered.token, registered.account.user_id, {
+        name: 'inherits_platform',
+      });
+
+      expect(project.ai_provider).toBe('openrouter');
+      expect(project.ai_model).toBe('openai/gpt-4o-mini');
+    });
+
+    it('still lets the caller name a platform explicitly', async () => {
+      const registered = await accountWithKey('platform_explicit_user', 'openrouter');
+
+      const project = await create(registered.token, registered.account.user_id, {
+        name: 'explicit_platform',
+        ai_provider: 'anthropic',
+      });
+
+      expect(project.ai_provider).toBe('anthropic');
+    });
+
+    it('falls back to the configured default when the account has no credential', async () => {
+      // The zero configuration promise: a clean clone with nothing set up still
+      // creates projects that translate, offline and for free.
+      const registered = await registerAccount(app, {
+        user_id: 'platform_bare_user',
+        email: 'platform_bare_user@example.test',
+      });
+
+      const project = await create(registered.token, registered.account.user_id, {
+        name: 'bare_account',
+      });
+
+      expect(project.ai_provider).toBe('mock');
+    });
+
+    it('ignores a credential that has been disabled', async () => {
+      const registered = await accountWithKey('platform_disabled_user', 'openrouter');
+
+      const listed = await request(app)
+        .get(`/api/v1/namespaces/${registered.account.user_id}/settings/ai_keys`)
+        .set('Authorization', `Bearer ${registered.token}`)
+        .expect(200);
+
+      await request(app)
+        .patch(
+          `/api/v1/namespaces/${registered.account.user_id}/settings/ai_keys/${listed.body.data.keys[0].id}`,
+        )
+        .set('Authorization', `Bearer ${registered.token}`)
+        .send({ is_active: false })
+        .expect(200);
+
+      const project = await create(registered.token, registered.account.user_id, {
+        name: 'disabled_credential',
+      });
+
+      expect(project.ai_provider).toBe('mock');
+    });
+
+    it('prefers the organization credential over the member own', async () => {
+      // The chain is walked organization first, so a project created inside one
+      // defaults to what the organization pays for.
+      const member = await accountWithKey('platform_org_member', 'anthropic');
+
+      const organization = await request(app)
+        .post('/api/v1/namespaces/organizations')
+        .set('Authorization', `Bearer ${member.token}`)
+        .send({ user_id: 'platform_org', email: 'platform_org@example.test' })
+        .expect(201);
+
+      const handle = organization.body.data.namespace.user_id;
+
+      await request(app)
+        .post(`/api/v1/namespaces/${handle}/settings/ai_keys`)
+        .set('Authorization', `Bearer ${member.token}`)
+        .send({ provider: 'openrouter', api_key: 'org_openrouter_key_5678' })
+        .expect(201);
+
+      const project = await create(member.token, handle, { name: 'org_platform' });
+
+      expect(project.ai_provider).toBe('openrouter');
+    });
+
+    it('uses the member own credential when the organization has none', async () => {
+      const member = await accountWithKey('platform_solo_member', 'anthropic');
+
+      const organization = await request(app)
+        .post('/api/v1/namespaces/organizations')
+        .set('Authorization', `Bearer ${member.token}`)
+        .send({ user_id: 'platform_org_bare', email: 'platform_org_bare@example.test' })
+        .expect(201);
+
+      const project = await create(
+        member.token,
+        organization.body.data.namespace.user_id,
+        { name: 'member_platform' },
+      );
+
+      expect(project.ai_provider).toBe('anthropic');
+    });
+  });
+
   describe('names are scoped to their namespace', () => {
     it('accepts the same name in a personal and an organization namespace', async () => {
       const personal = await createProject(app, owner.token, 'project_owner', {

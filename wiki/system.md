@@ -54,7 +54,9 @@ accounts ──< ai_chat_sessions ──< ai_chat_logs     (a conversation and i
 
 Credentials hang off `accounts` and nowhere else. A project names a platform and
 a model; the key that pays for it comes from the namespace that owns the project,
-then from the personal keys of whoever asked.
+then from the personal keys of whoever asked. A project created without naming a
+platform takes it from that same chain, so the credential an account holds is
+what decides where its projects translate.
 
 Every child relation cascades on delete, so removing a namespace removes its
 projects, files, keys and translations with it. No orphaned customer data is

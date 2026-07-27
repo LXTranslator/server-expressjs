@@ -10,9 +10,10 @@ const { BadRequestError, NotFoundError } = require('../../core/errors');
 /**
  * Account level AI credentials.
  *
- * A project's credentials pay for that project's translation pipeline. These
- * pay for whatever an account does outside a single project, which today means
- * the assistant. The rules are the same ones the project credentials follow:
+ * The only credentials there are. These pay for everything the application
+ * sends to a vendor: translating files inside a project and answering questions
+ * in the assistant alike. A project names a platform and a model and borrows
+ * the matching key from here. The rules:
  *
  *   - A key is encrypted before it is written and is never returned to a
  *     client, in any endpoint, at any role. The interface identifies a key by
@@ -291,6 +292,46 @@ async function loadForAccount(accountId, origin) {
 }
 
 /**
+ * Names the platform an account can actually pay for, highest priority first.
+ *
+ * Used to choose the platform of a new project. Without it a project falls back
+ * to the configured default, which is the offline mock, and an account that has
+ * carefully added a real credential gets projects that translate to placeholder
+ * text and report themselves as finished.
+ *
+ * Nothing is decrypted here. Choosing a default needs the name of a platform,
+ * not the secret that pays for it, and the one function allowed to decrypt
+ * should stay the one that is about to make a provider call.
+ *
+ * The organization is asked first and the person second, matching the order the
+ * chain is walked, so a new project in an organization defaults to what the
+ * organization pays for rather than to a member's personal vendor.
+ *
+ * @param {object} params Parameters.
+ * @param {string} params.namespaceAccountId Namespace the project belongs to.
+ * @param {string} [params.actorAccountId] Person creating it.
+ * @returns {Promise<string|null>} A platform name, or null when nothing is configured.
+ */
+async function findConfiguredProvider({ namespaceAccountId, actorAccountId }) {
+  const accountIds = [namespaceAccountId, actorAccountId].filter(
+    (id, index, all) => typeof id === 'string' && all.indexOf(id) === index,
+  );
+
+  for (const accountId of accountIds) {
+    const row = await AccountApiKey.findOne({
+      where: { accountId, isActive: true },
+      order: [['priority_order', 'ASC'], ['created_at', 'ASC']],
+    });
+
+    // A stored platform is still checked against the registry: a row written
+    // before a platform was withdrawn must not select an adapter that is gone.
+    if (row !== null && getProvider(row.provider) !== null) return row.provider;
+  }
+
+  return null;
+}
+
+/**
  * Builds the credential chain for one person acting in one namespace.
  *
  * Inside an organization the organization pays first: its credentials come
@@ -403,6 +444,7 @@ module.exports = {
   updateApiKey,
   reorderApiKeys,
   removeApiKey,
+  findConfiguredProvider,
   loadDecryptedKeys,
   loadEmbeddingKey,
   recordKeyAttempts,

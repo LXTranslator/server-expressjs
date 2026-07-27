@@ -203,7 +203,7 @@ required for a development or test run.
 | `UPLOAD_MAX_BYTES` | no | `2097152` | Maximum upload size in bytes. |
 | `UPLOAD_MAX_JSON_DEPTH` | no | `20` | Maximum nesting depth accepted. |
 | `UPLOAD_MAX_KEYS` | no | `5000` | Maximum translatable keys per file. |
-| `AI_DEFAULT_PROVIDER` | no | `mock` | Provider chosen for new projects: `mock`, `openai`, `anthropic` or `openrouter`. |
+| `AI_DEFAULT_PROVIDER` | no | `mock` | Last resort platform for a new project, used only when the owning account holds no credential at all. An account with a key gets that key's platform instead. `mock` translates nothing: it returns the source text with a locale marker in front of it. |
 | `AI_DEFAULT_MODEL` | no | `mock-small` | Model chosen for new projects. |
 | `AI_DEFAULT_API_KEY` | no | development default | Built in key, refused in production. |
 | `AI_REQUEST_TIMEOUT_MS` | no | `30000` | Per provider request timeout. |
