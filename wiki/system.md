@@ -269,10 +269,11 @@ brake is the model deciding it is finished has no brake.
 
 The tools cover the settings a person would otherwise go and click: a project's
 name, description, languages, files, the platform and model it translates on,
-and the shapes its downloads are written in. That last one matters more than it looks. Without it the assistant would
-answer a request to use a particular model by writing the request into the
-description, which sets nothing and leaves the project translating on whatever
-it defaulted to, while reading as though it had been done.
+and the shapes its downloads are written in. That platform setting matters more
+than it looks. Without it the assistant would answer a request to use a
+particular model by writing the request into the description, which sets nothing
+and leaves the project translating on whatever it defaulted to, while reading as
+though it had been done.
 
 `list_platforms` exists for the same reason. The registry is a fixed allowlist,
 so a model asked for a platform or a model it half remembers can check rather
