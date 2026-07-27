@@ -118,18 +118,23 @@ function requireAdmin(access) {
 }
 
 /**
- * Reports whether the account can actually pay for a platform.
+ * Reports whether a namespace can actually pay for a platform.
  *
  * A project may name any platform in the registry, exactly as the settings page
  * allows, so this never refuses. It exists so the assistant can say "set, but
  * nothing here pays for it yet" instead of letting somebody discover that when
  * a translation fails.
  *
- * @param {object} context Tool context.
+ * The namespace is a parameter rather than read from the context because one
+ * call may span several: a credential in one organization says nothing about
+ * whether another can pay for the same platform.
+ *
+ * @param {string} namespaceAccountId Namespace owning the project.
+ * @param {string} actorAccountId Person acting, whose personal keys stand behind it.
  * @param {string} providerName Platform the project will use.
  * @returns {Promise<string|null>} A warning to relay, or null when it is paid for.
  */
-async function warnUnpaidPlatform(context, providerName) {
+async function warnUnpaidPlatform(namespaceAccountId, actorAccountId, providerName) {
   const provider = getProvider(providerName);
   if (provider === null) return null;
 
@@ -138,13 +143,69 @@ async function warnUnpaidPlatform(context, providerName) {
   }
 
   const configured = await accountKeyService.listConfiguredProviders({
-    namespaceAccountId: context.namespace.id,
-    actorAccountId: context.actor.id,
+    namespaceAccountId,
+    actorAccountId,
   });
 
   if (configured.includes(providerName)) return null;
 
   return `No active ${provider.label} credential is on this account, so translating will fall back to the built in offline platform or fail. Add one in the namespace AI settings.`;
+}
+
+/**
+ * Collects the projects one call should act on.
+ *
+ * Two ways in, and the difference is only how the identifiers are gathered.
+ * Naming them reaches projects anywhere the caller can act, which is what makes
+ * "set these three, they are in different organizations" work. Asking for all
+ * of them sweeps every namespace the caller belongs to, which is the same set
+ * seen from the other direction.
+ *
+ * Neither is a permission. Gathering an identifier here says only that the
+ * caller can see the project; whether they may change it is decided per project
+ * by the handler, through the same resolver the REST routes use. A namespace
+ * the caller does not belong to never appears in the sweep, and an identifier
+ * from one that is named explicitly fails to resolve.
+ *
+ * @param {object} context Tool context.
+ * @param {object} args Validated arguments.
+ * @returns {Promise<{identifiers: Array<number|string>, failure: object|null}>}
+ */
+async function collectProjectTargets(context, args) {
+  let identifiers = args.project_ids ?? [];
+
+  if (args.all_projects === true) {
+    const namespaces = await namespaceService.listAccessibleNamespaces(context.actor);
+    const gathered = [];
+
+    for (const namespace of namespaces) {
+      const projects = await projectService.listProjects(namespace.id);
+      for (const project of projects) gathered.push(project.id);
+    }
+
+    identifiers = gathered;
+  }
+
+  if (identifiers.length === 0) {
+    return {
+      identifiers: [],
+      failure: fail('No project was named.', {
+        instruction:
+          'Ask which projects to change, or offer to change every project the person can reach.',
+      }),
+    };
+  }
+
+  if (identifiers.length > MAX_PROJECTS_PER_CALL) {
+    return {
+      identifiers: [],
+      failure: fail(`That is more than ${MAX_PROJECTS_PER_CALL} projects for one call.`, {
+        instruction: 'Ask the person to narrow the request to fewer projects.',
+      }),
+    };
+  }
+
+  return { identifiers, failure: null };
 }
 
 const TOOLS = [
@@ -311,7 +372,11 @@ const TOOLS = [
         ai_provider: project.ai_provider,
         ai_model: project.ai_model,
       };
-      const warning = await warnUnpaidPlatform(context, project.ai_provider);
+      const warning = await warnUnpaidPlatform(
+        context.namespace.id,
+        context.actor.id,
+        project.ai_provider,
+      );
 
       if (context.attachment === null) {
         return ok({
@@ -642,11 +707,21 @@ const TOOLS = [
   {
     name: 'update_project_ai',
     description:
-      'Set the AI platform and model a project translates with, for example openrouter and deepseek/deepseek-v4-flash. Changing the platform without naming a model uses that platform default.',
+      'Set the AI platform and model projects translate with, for example openrouter and deepseek/deepseek-v4-flash. Change one project, several at once wherever they live, or every project the person can reach. Changing the platform without naming a model uses that platform default.',
     parameters: {
       type: 'object',
       properties: {
-        project_id: { type: 'integer', description: 'Project to change.' },
+        project_ids: {
+          type: 'array',
+          items: { type: 'integer' },
+          description:
+            'Projects to change. One identifier for a single project, several for a batch. They may sit in different namespaces. Omit when using all_projects.',
+        },
+        all_projects: {
+          type: 'boolean',
+          description:
+            'Change every project the person can reach, in their own namespace and in every organization they belong to.',
+        },
         ai_provider: {
           type: 'string',
           description: 'Platform name, such as openrouter. Omit to keep the current one.',
@@ -657,15 +732,20 @@ const TOOLS = [
             'Model on that platform, such as deepseek/deepseek-v4-flash. Omit for the platform default.',
         },
       },
-      required: ['project_id'],
+      required: [],
       additionalProperties: false,
     },
     schema: z
       .object({
-        project_id: z.union([z.number(), z.string()]),
+        project_ids: z
+          .array(z.union([z.number(), z.string()]))
+          .max(MAX_PROJECTS_PER_CALL)
+          .optional(),
+        all_projects: z.boolean().optional(),
         ai_provider: z.string().trim().max(50).optional(),
         ai_model: z.string().trim().max(100).optional(),
       })
+      .strict()
       .refine(
         (value) => value.ai_provider !== undefined || value.ai_model !== undefined,
         { message: 'Name a platform, a model, or both.' },
@@ -677,47 +757,105 @@ const TOOLS = [
      * @returns {Promise<object>} Tool result.
      */
     async handler(args, context) {
-      const { access, failure } = await resolveProject(context, args.project_id);
+      const { identifiers, failure } = await collectProjectTargets(context, args);
       if (failure !== null) return failure;
 
-      const denied = requireAdmin(access);
-      if (denied !== null) return denied;
-
-      let project;
-      try {
-        project = await projectService.updateProject(access.project, {
-          ...(args.ai_provider === undefined ? {} : { ai_provider: args.ai_provider }),
-          ...(args.ai_model === undefined ? {} : { ai_model: args.ai_model }),
-        });
-      } catch (error) {
-        if (error instanceof AppError) {
-          // An unknown platform or model is the ordinary mistake here, so the
-          // catalogue comes back with the refusal rather than after another turn.
-          return fail(error.message, {
-            platforms: listProviders().map((provider) => ({
-              name: provider.name,
-              models: provider.models,
+      // An unknown platform or model would fail identically on every project,
+      // so it is caught once here rather than reported as twenty skips.
+      if (args.ai_provider !== undefined) {
+        const provider = getProvider(args.ai_provider);
+        if (provider === null) {
+          return fail(`The AI provider "${args.ai_provider}" is not supported.`, {
+            platforms: listProviders().map((entry) => ({
+              name: entry.name,
+              models: entry.models,
             })),
             instruction:
-              'Tell the person that name is not offered, and pick from the platforms listed here.',
+              'Tell the person that platform does not exist, and pick from the ones listed here.',
           });
         }
-        throw error;
+        if (args.ai_model !== undefined && !provider.models.includes(args.ai_model)) {
+          return fail(`The model "${args.ai_model}" is not offered by ${provider.label}.`, {
+            platforms: listProviders().map((entry) => ({
+              name: entry.name,
+              models: entry.models,
+            })),
+            instruction:
+              'Tell the person that model is not offered, and pick from the ones listed here.',
+          });
+        }
       }
 
-      const warning = await warnUnpaidPlatform(context, project.ai_provider);
+      const applied = [];
+      const skipped = [];
+      const warnings = new Set();
 
-      return ok({
-        project: {
-          id: project.id,
+      for (const identifier of identifiers) {
+        // Every project is authorised on its own. A list is not a permission,
+        // and neither is a sweep: an organization the caller does not belong to
+        // never appears, and one they belong to without ADMIN is skipped here.
+        const { access, failure: denied } = await resolveProject(context, identifier);
+        if (denied !== null) {
+          skipped.push({ project_id: identifier, reason: denied.error });
+          continue;
+        }
+
+        const refused = requireAdmin(access);
+        if (refused !== null) {
+          skipped.push({ project_id: identifier, reason: refused.error });
+          continue;
+        }
+
+        let project;
+        try {
+          project = await projectService.updateProject(access.project, {
+            ...(args.ai_provider === undefined ? {} : { ai_provider: args.ai_provider }),
+            ...(args.ai_model === undefined ? {} : { ai_model: args.ai_model }),
+          });
+        } catch (error) {
+          if (!(error instanceof AppError)) throw error;
+          // A model valid on one platform may not exist on another, so a
+          // project already sitting elsewhere is skipped rather than failing
+          // the projects that could take the change.
+          skipped.push({ project_id: identifier, reason: error.message });
+          continue;
+        }
+
+        applied.push({
+          project_id: project.id,
           name: project.name,
+          namespace: access.namespace.userId,
           ai_provider: project.ai_provider,
           ai_model: project.ai_model,
-        },
-        ...(warning === null ? {} : { warning }),
-        message: `"${project.name}" now translates on ${project.ai_provider} using ${project.ai_model}.`,
+        });
+
+        // Asked per namespace, because a credential in one organization says
+        // nothing about whether another can pay for the same platform.
+        const warning = await warnUnpaidPlatform(
+          access.namespace.id,
+          context.actor.id,
+          project.ai_provider,
+        );
+        if (warning !== null) warnings.add(`${access.namespace.userId}: ${warning}`);
+      }
+
+      if (applied.length === 0) {
+        return fail('No project could be changed.', {
+          skipped,
+          instruction: 'Tell the person why each project was skipped.',
+        });
+      }
+
+      return ok({
+        applied,
+        skipped,
+        ...(warnings.size === 0 ? {} : { warnings: [...warnings] }),
+        message:
+          applied.length === 1
+            ? `"${applied[0].name}" now translates on ${applied[0].ai_provider} using ${applied[0].ai_model}.`
+            : `Changed ${applied.length} projects${skipped.length > 0 ? `, skipped ${skipped.length}` : ''}.`,
         instruction:
-          'Existing translations are not redone by this change. Say so, and offer to re translate if the person wants the new model applied to what is already there.',
+          'Existing translations are not redone by this change. Say so, and offer to re translate if the person wants the new model applied to what is already there. Report anything skipped and why.',
       });
     },
   },

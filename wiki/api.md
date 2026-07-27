@@ -635,7 +635,7 @@ replaces that, and nothing rewrites a chosen name afterwards.
 | `update_project_description` | Replaces a description | `ADMIN` in an organization |
 | `create_project` | Creates a **new** project, with an optional platform and model, uploading the attachment when present | `ADMIN` in an organization |
 | `list_platforms` | The platforms and models a project may use, and which the account pays for | Namespace access |
-| `update_project_ai` | Sets the platform and model a project translates with | `ADMIN` in an organization |
+| `update_project_ai` | Sets the platform and model one project, several, or all of them translate with | `ADMIN` in an organization |
 | `upload_file` | Uploads the attachment into a project that **already exists** | `ADMIN` in an organization |
 | `list_files` | Lists a project's files and their status | Project access |
 | `add_languages` | Adds targets to one project, several, or all | `ADMIN` in an organization |
@@ -670,10 +670,32 @@ mock.
 
 `update_project_ai` accepts a platform, a model, or both; naming only a platform
 uses that platform's default model. An unknown name comes back as a refusal
-carrying the catalogue, so the correction costs no extra turn. Setting a
-platform the account cannot pay for succeeds, exactly as the settings page
-allows, and returns a `warning` the assistant relays. Existing translations are
-never redone by the change.
+carrying the catalogue, so the correction costs no extra turn, and it is
+refused once rather than reported as a skip on every project. Existing
+translations are never redone by the change.
+
+It takes `project_ids` for one project or several, or `all_projects` to sweep
+every project the caller can reach: their own namespace and every organization
+they belong to. A named list may span namespaces, so three projects in three
+different organizations are one call.
+
+Neither form is a permission. Each project is resolved through
+`resolveProjectAccess` against the signed in account, so a project in an
+organization the caller does not belong to cannot be reached however it is
+named, and one they belong to without `ADMIN` is reported in `skipped` rather
+than changed. A batch reports `applied` and `skipped` instead of failing whole
+because one identifier was unreachable, and is bounded at 25 projects per call.
+
+`warnings` names the namespaces that cannot pay for the platform that was set,
+asked per namespace because a credential in one organization says nothing about
+another. A personal credential does stand behind an organization's project when
+that person is the one acting, which is the fallback chain working as intended
+and is not warned about.
+
+Note that `all_projects` means something wider here than in `add_languages`,
+which sweeps the current namespace only. Adding a language spends provider
+quota per string; changing a platform spends nothing until the next
+translation, so the wider sweep is the useful one.
 
 `create_export_format` takes the same four choices the endpoint does, never a
 template string, and both format tools return a `preview`: a two key sample
