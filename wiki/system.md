@@ -127,10 +127,12 @@ JSON envelope, or `langs.zip`) and its documents are written in one of the
 namespace's formats. The two questions are independent, which is why they are
 separate query fields rather than one.
 
-Two formats ship with the application and exist for every namespace without
-being stored: `default`, the value and hash shape described below, and
-`key_value`, the bare string a localization library reads directly. Neither can
-be edited or deleted, because a build script already downloads with it.
+Three formats ship with the application and exist for every namespace without
+being stored: `default`, the value and hash shape described below; `key_value`,
+the bare string a localization library reads directly; and `flat_key_value`,
+the same bare string with each dotted path kept as one key rather than expanded
+into a tree. None can be edited or deleted, because a build script already
+downloads with it.
 
 A namespace may store further formats of its own, and every project underneath
 can then be downloaded in any of them. A stored format is a description rather
@@ -162,9 +164,10 @@ translation.
 This is a change detection fingerprint, not a security primitive. It is never
 used for authentication, signatures or password storage.
 
-Choosing `key_value` trades this away: the document holds no fingerprint, so
-staleness cannot be read from the file. `GET /files/:fileId/translations` still
-reports it, which is where the editor gets its warnings from either way.
+Choosing `key_value` or `flat_key_value` trades this away: the document holds no
+fingerprint, so staleness cannot be read from the file. `GET
+/files/:fileId/translations` still reports it, which is where the editor gets
+its warnings from either way.
 
 ### Correcting one string
 
@@ -302,6 +305,37 @@ so both format tools return a preview rendered by the real export builder. The
 person sees the document they will get rather than a description of it, and the
 preview cannot drift from the download because it is not a second
 implementation of it.
+
+### Handing over a file
+
+`export_file` answers "give me the file" with a download control on the answer
+itself, rather than directions to the editor screen. It offers one locale as
+JSON, or every locale as one archive, written in any format the namespace
+offers.
+
+What the tool returns is a reference: which file, which locale, which format.
+The document is never built inside the tool and never enters the result. Two
+reasons, and both matter. A locale file is user written text, so feeding it back
+through the model is precisely the injection surface the tool layer exists to
+avoid; and a file of any size would be paid for as tokens on every remaining
+step of the loop.
+
+The bytes come from the ordinary download endpoint when the control is used,
+which resolves access again for the person clicking it. An offer is therefore
+not a capability: whatever the model got wrong about who may read a file is
+caught a second time, by the code every other download goes through.
+
+Offers belong to the answer rather than to the stored conversation, so reopening
+an old exchange replays the text without them, and a bounded number are allowed
+per turn so a model that has just listed twenty files cannot answer with twenty
+controls.
+
+The name the download saves as can be asked for in the conversation, since "send
+me the Thai strings as thai_strings.json" is one request rather than two. The
+name is somebody's to choose and the extension is not: it is reduced to a bare
+filename carrying no path, and corrected to describe what is actually being
+sent, because a zip archive named `.json` is a file the operating system opens
+with the wrong application.
 
 ### The model has no authority
 

@@ -62,7 +62,7 @@ Framework free primitives shared by every layer.
 | [`src/core/reservedIdentifiers.js`](src/core/reservedIdentifiers.js) | Namespace identifiers the client routes to itself. |
 | [`src/core/zip.js`](src/core/zip.js) | Minimal in memory ZIP writer for the archive download. |
 | [`src/core/jsonTree.js`](src/core/jsonTree.js) | JSON flattening and expansion with prototype pollution guards. |
-| [`src/core/filename.js`](src/core/filename.js) | Upload filename sanitisation and path containment. |
+| [`src/core/filename.js`](src/core/filename.js) | Upload filename sanitisation, download naming and path containment. |
 | [`src/core/placeholders.js`](src/core/placeholders.js) | Interpolation token extraction and comparison. |
 
 ### Infrastructure

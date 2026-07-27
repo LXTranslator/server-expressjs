@@ -263,6 +263,31 @@ async function exportArchive(file, format) {
   };
 }
 
+/**
+ * Reports what a file could be downloaded as, without building anything.
+ *
+ * Answers the question "is there a document here, and in which languages" for a
+ * caller that wants to offer a download rather than serve one. The locale list
+ * comes from the translations that actually exist rather than from the
+ * languages the file was configured for, so an offer cannot name a locale the
+ * download endpoint would then refuse.
+ *
+ * A file with no keys reports no locales at all. The master would otherwise
+ * appear on the strength of being the master, describing an empty document as
+ * something worth fetching.
+ *
+ * @param {object} file File model instance.
+ * @returns {Promise<{keyCount: number, locales: string[]}>} What is exportable.
+ */
+async function describeExport(file) {
+  const keys = await loadTranslationKeys(file.id);
+
+  return {
+    keyCount: keys.length,
+    locales: keys.length === 0 ? [] : listAvailableLocales(keys),
+  };
+}
+
 module.exports = {
   getEditorData,
   updateTranslation,
@@ -271,6 +296,7 @@ module.exports = {
   exportLocale,
   exportAllLocales,
   exportArchive,
+  describeExport,
   loadTranslationKeys,
   ARCHIVE_FILENAME,
 };

@@ -20,6 +20,15 @@ const { BadRequestError } = require('./errors');
 /** Characters permitted in a stored filename, after the extension is split off. */
 const SAFE_STEM_PATTERN = /^[A-Za-z0-9._ -]+$/;
 
+/**
+ * Longest name a download may be given, before its extension.
+ *
+ * Well past anything a person would type, and short enough that the result
+ * survives a filesystem that caps a name at 255 bytes even once a browser has
+ * appended its own "(1)" to avoid a collision.
+ */
+const MAX_DOWNLOAD_STEM_LENGTH = 100;
+
 /** Windows device names, reserved regardless of extension. */
 const RESERVED_NAMES = new Set([
   'con', 'prn', 'aux', 'nul',
@@ -97,6 +106,81 @@ function sanitizeFilename(rawName, rules) {
 }
 
 /**
+ * Builds the name a download should be saved under.
+ *
+ * Separate from {@link sanitizeFilename} because the two answer different
+ * questions. That one guards a name arriving on an upload, where a missing or
+ * unexpected extension is a reason to refuse. This one takes a name somebody
+ * asked for in conversation, where "call it thai strings" is a perfectly clear
+ * request, and the extension is not theirs to choose: the bytes are whatever
+ * the export produced, so the name has to end up describing them.
+ *
+ * The name never reaches the filesystem. It is carried to a browser, which
+ * writes it to a downloads folder, so the containment rules are the same ones
+ * an upload gets and for the same reason.
+ *
+ * @param {string} rawName Name asked for.
+ * @param {string} extension Required extension, including the dot.
+ * @returns {string} Safe filename ending in that extension.
+ * @throws {BadRequestError} When the name cannot be made safe.
+ */
+function buildDownloadName(rawName, extension) {
+  if (typeof rawName !== 'string' || rawName.trim().length === 0) {
+    throw new BadRequestError('That download name is empty.');
+  }
+
+  if (rawName.includes('\0')) {
+    throw new BadRequestError('That download name contains an illegal character.');
+  }
+
+  const flattened = rawName.replace(/\\/g, '/');
+  const base = path.posix.basename(flattened).trim();
+
+  if (base.length === 0 || base === '.' || base === '..') {
+    throw new BadRequestError('That download name is not usable.');
+  }
+
+  if (base.includes('/') || base.includes('..')) {
+    throw new BadRequestError('A download name must not contain a path.');
+  }
+
+  // Already correct rather than merely present, so asking for "th.json" does
+  // not produce "th.json.json" while "notes.txt" still ends up describing the
+  // JSON it actually is.
+  const stem = base.toLowerCase().endsWith(extension.toLowerCase())
+    ? base.slice(0, base.length - extension.length)
+    : base;
+
+  if (stem.length === 0) {
+    throw new BadRequestError('A download name needs something before its extension.');
+  }
+
+  if (stem.length > MAX_DOWNLOAD_STEM_LENGTH) {
+    throw new BadRequestError(
+      `A download name must be ${MAX_DOWNLOAD_STEM_LENGTH} characters or fewer.`,
+    );
+  }
+
+  // A leading dot would create a hidden file; control characters would corrupt
+  // logs and interface output.
+  if (stem.startsWith('.') || /[\u0000-\u001f\u007f]/.test(stem)) {
+    throw new BadRequestError('That download name contains an illegal character.');
+  }
+
+  if (!SAFE_STEM_PATTERN.test(stem)) {
+    throw new BadRequestError(
+      'A download name may contain only letters, digits, spaces, dots, underscores and hyphens.',
+    );
+  }
+
+  if (RESERVED_NAMES.has(stem.toLowerCase())) {
+    throw new BadRequestError('That download name is reserved by the operating system.');
+  }
+
+  return `${stem}${extension}`;
+}
+
+/**
  * Resolves a path and proves it stays inside a directory.
  *
  * Used on every filesystem write and read, so even a defect elsewhere in the
@@ -120,4 +204,11 @@ function resolveWithinDirectory(directory, candidate) {
   return resolved;
 }
 
-module.exports = { sanitizeFilename, resolveWithinDirectory, SAFE_STEM_PATTERN, RESERVED_NAMES };
+module.exports = {
+  sanitizeFilename,
+  buildDownloadName,
+  resolveWithinDirectory,
+  SAFE_STEM_PATTERN,
+  RESERVED_NAMES,
+  MAX_DOWNLOAD_STEM_LENGTH,
+};

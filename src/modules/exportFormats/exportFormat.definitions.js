@@ -14,7 +14,7 @@ const { BadRequestError } = require('../../core/errors');
  * template string and no expression, so a format a user creates can change the
  * shape of a document but can never introduce behaviour.
  *
- * The two formats below ship with the application and belong to every
+ * The three formats below ship with the application and belong to every
  * namespace. They are constants rather than rows so that no namespace has to be
  * seeded to have them, and so that nobody can edit or delete a shape a
  * published consumer already depends on.
@@ -57,8 +57,31 @@ const KEY_VALUE_FORMAT = Object.freeze({
   builtIn: true,
 });
 
+/**
+ * The same bare strings, with every dotted path left as one key.
+ *
+ * `key_value` rebuilds the nesting the upload had, so `greeting.hello` comes
+ * back as an object inside an object. Plenty of tooling wants the opposite: a
+ * single flat map it can look a full key path up in, which is what a gettext
+ * style catalogue and several mobile toolchains expect. That is one field
+ * different from `key_value`, and it ships rather than being left for each
+ * namespace to recreate by hand, because it is the shape people ask for by
+ * name.
+ */
+const FLAT_KEY_VALUE_FORMAT = Object.freeze({
+  formatId: 'flat_key_value',
+  name: 'Flat key and value',
+  description:
+    'Plain JSON key and value pairs with the dotted path kept as a single key, so nothing is nested. Carries no fingerprint, so staleness cannot be read from the file.',
+  leafShape: 'STRING',
+  valueField: null,
+  hashField: null,
+  nested: false,
+  builtIn: true,
+});
+
 /** Formats every namespace has, in the order a dropdown should offer them. */
-const BUILT_IN_FORMATS = Object.freeze([DEFAULT_FORMAT, KEY_VALUE_FORMAT]);
+const BUILT_IN_FORMATS = Object.freeze([DEFAULT_FORMAT, KEY_VALUE_FORMAT, FLAT_KEY_VALUE_FORMAT]);
 
 /** Identifiers a namespace may not reuse for a format of its own. */
 const BUILT_IN_FORMAT_IDS = Object.freeze(BUILT_IN_FORMATS.map((format) => format.formatId));
@@ -141,6 +164,7 @@ module.exports = {
   DEFAULT_FORMAT_ID,
   DEFAULT_FORMAT,
   KEY_VALUE_FORMAT,
+  FLAT_KEY_VALUE_FORMAT,
   BUILT_IN_FORMATS,
   BUILT_IN_FORMAT_IDS,
   getBuiltInFormat,
