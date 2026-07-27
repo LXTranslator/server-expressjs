@@ -938,6 +938,7 @@ replaces that, and nothing rewrites a chosen name afterwards.
 | `update_project_ai` | Sets the platform and model one project, several, or all of them translate with | `ADMIN` in an organization |
 | `upload_file` | Uploads the attachment into a project that **already exists** | `ADMIN` in an organization |
 | `list_files` | Lists a project's files and their status | Project access |
+| `create_file` | Creates a new locale file from keys named in the conversation, with no attachment | `ADMIN` in an organization |
 | `add_keys` | Adds new keys to a file that already exists, from an attachment or from keys named in the conversation | `ADMIN` in an organization |
 | `add_languages` | Adds one language, several, or every one already in use, to one project, several, or all | `ADMIN` in an organization |
 | `list_export_formats` | The download shapes this namespace offers, each with a sample | Namespace access |

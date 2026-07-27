@@ -148,7 +148,8 @@ router.post(
       project: req.project,
       namespace: req.namespace,
       actor: req.account,
-      file: req.file,
+      content: fileService.assertJsonObject(req.file.buffer),
+      filename: req.file.safeName,
       sourceLang: req.body.source_lang,
       targetLangs: req.body.target_langs,
     });

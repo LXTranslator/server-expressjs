@@ -314,19 +314,36 @@ async function processFile({
 }
 
 /**
- * Accepts an upload and starts processing it.
+ * Creates a file from a document and starts processing it.
+ *
+ * The document arrives as JSON text under a name that has already been
+ * sanitised, rather than as a multer descriptor, because a file does not only
+ * ever come from an upload. Somebody can also describe one in a sentence, and
+ * that is a file by every measure that matters here: it has a name, a source
+ * language, targets and keys. Keeping one creation path means the duplicate
+ * name check, the archive, the record and the pipeline cannot differ between
+ * the two, and validating bytes stays with whichever caller is holding them.
  *
  * @param {object} params Upload parameters.
  * @param {object} params.project Owning project.
- * @param {object} params.file Multer file descriptor, already sanitised.
- * @param {string} params.sourceLang Locale of the uploaded document.
+ * @param {object} params.namespace Namespace owning the project.
+ * @param {object} params.actor Account creating the file.
+ * @param {string} params.content Locale document as JSON text.
+ * @param {string} params.filename Sanitised filename to store it under.
+ * @param {string} params.sourceLang Locale of the document.
  * @param {string[]} params.targetLangs Requested target locales.
  * @returns {Promise<{file: object, processing: Promise<void>}>}
  * @throws {ConflictError} When the project already has a file with that name.
  */
-async function createUpload({ project, namespace, actor, file, sourceLang, targetLangs }) {
-  const content = assertJsonObject(file.buffer);
-
+async function createUpload({
+  project,
+  namespace,
+  actor,
+  content,
+  filename,
+  sourceLang,
+  targetLangs,
+}) {
   const normalizedSource = assertLangCode(sourceLang ?? MASTER_LANG_CODE);
   const normalizedTargets = [...new Set((targetLangs ?? []).map(assertLangCode))].filter(
     (code) => code !== normalizedSource,
@@ -337,26 +354,31 @@ async function createUpload({ project, namespace, actor, file, sourceLang, targe
   }
 
   const duplicate = await File.findOne({
-    where: { projectId: project.id, filename: file.safeName },
+    where: { projectId: project.id, filename },
   });
   if (duplicate !== null) {
     throw new ConflictError('This project already has a file with that name.');
   }
 
-  await persistRawUpload(project.id, file.buffer);
+  // The archive holds the validated document rather than the exact bytes that
+  // arrived, which differ only by a byte order mark. Nothing reads it back, the
+  // master is rebuilt from the database, and this way an archived file is
+  // always parseable whichever route created it.
+  const buffer = Buffer.from(content, 'utf8');
+  await persistRawUpload(project.id, buffer);
 
   const record = await File.create({
     projectId: project.id,
-    filename: file.safeName,
+    filename,
     sourceLangCode: normalizedSource,
     targetLangCodes: normalizedTargets,
     status: 'PENDING',
   });
 
-  logger.info('File uploaded.', {
+  logger.info('File created.', {
     fileId: record.id,
     projectId: project.id,
-    bytes: file.buffer.length,
+    bytes: buffer.length,
   });
 
   // Started but not awaited: the response returns immediately and the client
