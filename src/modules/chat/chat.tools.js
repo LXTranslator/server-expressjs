@@ -13,7 +13,8 @@ const { listProviders, getProvider } = require('../../infrastructure/ai/provider
 const { File } = require('../../infrastructure/database/models');
 const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 const { langCodeSchema } = require('../files/file.schemas');
-const { buildDownloadName } = require('../../core/filename');
+const { buildDownloadName, sanitizeFilename } = require('../../core/filename');
+const config = require('../../config');
 const exportFormatSchemas = require('../exportFormats/exportFormat.schemas');
 const { LEAF_SHAPES } = require('../../infrastructure/database/models/exportFormat');
 const embeddingService = require('./embedding.service');
@@ -501,7 +502,8 @@ const TOOLS = [
           project: await projectService.findProjectInstance(project.id),
           namespace: context.namespace,
           actor: context.actor,
-          file: context.attachment,
+          content: fileService.assertJsonObject(context.attachment.buffer),
+          filename: context.attachment.safeName,
           sourceLang: args.source_lang,
           targetLangs,
         });
@@ -583,7 +585,8 @@ const TOOLS = [
           project: access.project,
           namespace: access.namespace,
           actor: context.actor,
-          file: context.attachment,
+          content: fileService.assertJsonObject(context.attachment.buffer),
+          filename: context.attachment.safeName,
           sourceLang: args.source_lang,
           targetLangs: args.target_langs,
         });
@@ -1257,6 +1260,150 @@ const TOOLS = [
         instruction:
           'Show the person the preview so they can confirm it is the shape they meant, and tell them it is now selectable on the download screen of every project in this namespace.',
       });
+    },
+  },
+
+  {
+    name: 'create_file',
+    description: [
+      'Create a new locale file in a project from keys named in the conversation, with no',
+      'attachment involved. Use this whenever somebody dictates the strings, for example',
+      '"create corp.json with hello.owner saying Hello Owner". upload_file is for a file',
+      'attached to the message; this is for one described in words. Never ask somebody to',
+      'attach a placeholder document in order to get a file created.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'integer', description: 'Project to create the file in.' },
+        filename: {
+          type: 'string',
+          description: 'Name for the file, such as corp.json. The .json extension is added if missing.',
+        },
+        keys: {
+          type: 'object',
+          description:
+            'The strings, as English source text, for example {"hello.owner": "Hello Owner!"}. A dotted name is a path, exactly as in an uploaded document.',
+          additionalProperties: { type: 'string' },
+        },
+        target_langs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Locales to translate into, such as ["ja_jp", "th_th"].',
+        },
+        source_lang: {
+          type: 'string',
+          description: 'Locale the keys are written in. Defaults to en_us.',
+        },
+      },
+      required: ['project_id', 'filename', 'keys'],
+      additionalProperties: false,
+    },
+    schema: z
+      .object({
+        project_id: z.union([z.number(), z.string()]),
+        filename: z.string().trim().min(1).max(120),
+        keys: z.record(z.string().min(1).max(200), z.string()),
+        target_langs: targetLangsSchema.optional(),
+        source_lang: langCodeSchema.optional(),
+      })
+      .strict(),
+
+    /**
+     * Creates a file from keys somebody dictated.
+     *
+     * The absence of this was a real hole rather than an inconvenience. Every
+     * way into a file went through an upload, so asked to create one from three
+     * strings the assistant could only ask for a placeholder document to be
+     * attached so it had something to add keys to. That is a worse version of
+     * the thing being asked for, and it is the kind of workaround a person
+     * reasonably reads as the product being broken.
+     *
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const { access, failure } = await resolveProject(context, args.project_id);
+      if (failure !== null) return failure;
+
+      const denied = requireAdmin(access);
+      if (denied !== null) return denied;
+
+      const keyNames = Object.keys(args.keys);
+
+      if (keyNames.length === 0) {
+        return fail('No keys were named.', {
+          instruction: 'Ask which strings the file should hold and what each one says.',
+        });
+      }
+
+      if (keyNames.length > MAX_KEYS_PER_CALL) {
+        return fail(`That is more than ${MAX_KEYS_PER_CALL} keys for one call.`, {
+          instruction:
+            'Ask the person to attach the strings as a JSON file instead, which has no such limit.',
+        });
+      }
+
+      // A file with nothing to translate into is refused by the service, so the
+      // question is asked here rather than surfacing as a validation error the
+      // person cannot act on.
+      if (args.target_langs === undefined || args.target_langs.length === 0) {
+        return fail('No target languages were named.', {
+          instruction:
+            'Ask which languages the file should be translated into, then call this again.',
+        });
+      }
+
+      let filename;
+      try {
+        // Somebody saying "call it corp" means corp.json. The name is then held
+        // to the rules an uploaded name is held to, since it is stored and
+        // displayed exactly as one.
+        const named = args.filename.toLowerCase().endsWith('.json')
+          ? args.filename
+          : `${args.filename}.json`;
+
+        filename = sanitizeFilename(named, {
+          allowedExtensions: config.upload.allowedExtensions,
+          maxLength: config.upload.maxFilenameLength,
+        });
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        return fail(error.message, {
+          instruction: 'Ask the person for a different filename.',
+        });
+      }
+
+      try {
+        const { file } = await fileService.createUpload({
+          project: access.project,
+          namespace: access.namespace,
+          actor: context.actor,
+          content: JSON.stringify(args.keys),
+          filename,
+          sourceLang: args.source_lang,
+          targetLangs: args.target_langs,
+        });
+
+        return ok({
+          project: { id: access.project.id, name: access.project.name },
+          file: { id: file.id, filename: file.filename, status: file.status },
+          key_count: keyNames.length,
+          target_langs: file.targetLangCodes,
+          message: `Created ${file.filename} in "${access.project.name}" with ${keyNames.length} key(s), translating into ${file.targetLangCodes.join(', ')}.`,
+          instruction:
+            'Tell the person the file exists and that translation runs in the background until its status is READY. Use add_keys to put more strings into it later, rather than creating a second file.',
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return fail(error.message, {
+            instruction:
+              'Explain what was refused. A name already used in this project needs a different one, not a new project.',
+          });
+        }
+        throw error;
+      }
     },
   },
 

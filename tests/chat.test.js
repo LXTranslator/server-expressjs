@@ -150,6 +150,7 @@ describe('the assistant', () => {
         'add_languages',
         'check_project_languages',
         'create_export_format',
+        'create_file',
         'create_project',
         'export_file',
         'find_chat',
@@ -989,6 +990,251 @@ describe('the assistant', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/ADMIN|permission|allowed/i);
+    });
+  });
+
+  /*
+   * Creating a file from strings somebody dictated.
+   *
+   * Every route into a file used to go through an upload, so asked for a file
+   * of three strings the assistant could only ask for a placeholder document to
+   * be attached and then add keys to that. These tests are mostly about the
+   * file being an ordinary one: same record, same pipeline, same rules.
+   */
+  describe('creating a file from dictated keys', () => {
+    let projectId;
+
+    beforeAll(async () => {
+      const project = await createProject(app, token, namespace, { name: 'dictated_project' });
+      projectId = project.id;
+    });
+
+    it('creates a file with no attachment involved', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'corp.json',
+            keys: {
+              'hello.owner': 'Hello Owner!',
+              'hello.co_owner': 'Hello Co-Owner!',
+              'hello.member': 'Hello Member!',
+            },
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.file.filename).toBe('corp.json');
+      expect(result.key_count).toBe(3);
+
+      const file = await waitForFile(app, token, result.file.id);
+      expect(file.status).toBe('READY');
+
+      const editor = await request(app)
+        .get(`/api/v1/files/${result.file.id}/translations`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(editor.body.data.keys.map((key) => key.key_name).sort()).toEqual([
+        'hello.co_owner',
+        'hello.member',
+        'hello.owner',
+      ]);
+      expect(editor.body.data.available_locales.sort()).toEqual(['en_us', 'th_th']);
+    });
+
+    it('adds the extension when somebody names the file without one', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'notes',
+            keys: { greeting: 'Hello' },
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.file.filename).toBe('notes.json');
+      await waitForFile(app, token, result.file.id);
+    });
+
+    it('strips a directory out of a filename rather than storing it', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: '../escaped.json',
+            keys: { greeting: 'Hello' },
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+
+      // Reduced to a bare name, exactly as an uploaded one is. The document on
+      // disk is written under a generated identifier regardless, so this name
+      // is what gets stored and displayed and nothing more.
+      expect(result.ok).toBe(true);
+      expect(result.file.filename).toBe('escaped.json');
+      await waitForFile(app, token, result.file.id);
+    });
+
+    it('refuses traversal that survives the directory being stripped', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'up..down.json',
+            keys: { greeting: 'Hello' },
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/path/i);
+      expect(result.instruction).toMatch(/different filename/i);
+    });
+
+    it('asks which languages rather than failing validation', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'nolangs.json',
+            keys: { greeting: 'Hello' },
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/no target languages/i);
+      expect(result.instruction).toMatch(/which languages/i);
+    });
+
+    it('refuses a name the project already uses, without suggesting a new project', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'corp.json',
+            keys: { greeting: 'Hello' },
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/already has a file with that name/);
+      expect(result.instruction).toMatch(/not a new project/i);
+    });
+
+    it('refuses more keys in one call than the ceiling allows', async () => {
+      const keys = {};
+      for (let index = 0; index <= MAX_KEYS_PER_CALL; index += 1) {
+        keys[`bulk.key_${index}`] = `Value ${index}`;
+      }
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'bulk.json',
+            keys,
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/more than 200 keys/);
+    });
+
+    it('refuses a project belonging to somebody else', async () => {
+      const outsider = await registerAccount(app, {
+        user_id: 'dictate_outsider',
+        email: 'dictate_outsider@example.test',
+      });
+
+      const { Account } = require('../src/infrastructure/database/models');
+      const live = await Account.findByPk(outsider.account.id);
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'stolen.json',
+            keys: { greeting: 'Hello' },
+            target_langs: ['th_th'],
+          },
+        },
+        {
+          actor: live,
+          namespace: live,
+          namespaceRole: 'OWNER',
+          attachment: null,
+          sessionId: null,
+          downloads: [],
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/does not exist/);
+    });
+
+    it('takes add_keys afterwards, on the same file', async () => {
+      const created = await dispatchTool(
+        {
+          id: '1',
+          name: 'create_file',
+          arguments: {
+            project_id: projectId,
+            filename: 'growing.json',
+            keys: { 'menu.start': 'Start' },
+            target_langs: ['th_th'],
+          },
+        },
+        await context(),
+      );
+      await waitForFile(app, token, created.file.id);
+
+      const added = await dispatchTool(
+        {
+          id: '2',
+          name: 'add_keys',
+          arguments: { file_id: created.file.id, keys: { 'menu.quit': 'Quit' } },
+        },
+        await context(),
+      );
+
+      expect(added.ok).toBe(true);
+      expect(added.file.id).toBe(created.file.id);
     });
   });
 

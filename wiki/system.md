@@ -306,6 +306,22 @@ person sees the document they will get rather than a description of it, and the
 preview cannot drift from the download because it is not a second
 implementation of it.
 
+### A file that never was an upload
+
+`create_file` builds a locale file out of strings somebody dictates. A file
+described in a sentence has everything a file needs — a name, a source
+language, targets and keys — so it becomes an ordinary file record and runs the
+ordinary pipeline. There is one creation path: the upload route turns bytes into
+a document and a name, the tool turns an argument into the same two, and neither
+can drift from the other on the duplicate check, the archive or the record.
+
+Without it every route into a file went through an upload, and asked for a file
+of three strings the assistant did the only thing its catalogue allowed: it
+asked for a placeholder document to be attached, so that it had something to add
+keys to afterwards. That is a worse version of what was asked for, and a person
+reasonably reads it as the product being broken rather than as a gap in a tool
+list.
+
 ### Adding to a file that already exists
 
 `add_keys` is the assistant's route to the merge the editor has always offered:
