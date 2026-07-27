@@ -108,7 +108,23 @@ const availabilitySchema = z
     message: 'Provide a user id or an email address to check.',
   });
 
+/**
+ * Creating a machine credential.
+ *
+ * The name is required rather than optional, because a list of unnamed machine
+ * credentials is a list nobody can safely prune: the whole point of the screen
+ * is deciding which of them you still recognise.
+ */
+const createApiTokenSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Name the token, so you can recognise it later.').max(100),
+    /** Absent means no expiry, which is the ordinary case for a build script. */
+    expires_in_days: z.number().int().min(1).max(365).optional(),
+  })
+  .strict();
+
 module.exports = {
+  createApiTokenSchema,
   userIdSchema,
   userIdFormatSchema,
   emailSchema,

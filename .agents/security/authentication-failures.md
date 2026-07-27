@@ -45,7 +45,18 @@ description: Session handling, credential storage, lockout and single use token 
 10. **Many sessions per account is the ordinary case.** A laptop, a phone and a
    second browser profile are three rows. Nothing may assume one session per
    account, and revoking one must never touch another.
-11. **A session stores a digest, never a token.** Same rule as the action token
+11. **An API token is opaque, and that is the point.** A signed token verifies
+   without asking anything, which is the wrong trade for a credential that may
+   live a year: its life cannot be shortened once it is out. An opaque token
+   means every request consults the row, so revoking one takes effect on the
+   next call. Never reissue these as JWTs.
+12. **A token cannot manage tokens.** Creating and revoking both require a
+   signed in session. A token that can mint tokens can replace itself, and
+   revoking the original would achieve nothing.
+13. **A token is returned exactly once.** Only a digest and the last four
+   characters are stored. There is no endpoint that shows one again, and adding
+   one would mean storing something worth stealing.
+14. **A session stores a digest, never a token.** Same rule as the action token
    ledger, and it matters more here because these live longer. What is stored
    alongside it is deliberately minimal: the client string, so a list is
    actionable, and not the address, which locates a person and answers the same

@@ -26,6 +26,44 @@ Authenticated requests carry a bearer token:
 Authorization: Bearer your_access_token
 ```
 
+### Using this API from a machine
+
+Two kinds of bearer token exist, and every endpoint accepts either.
+
+| | Session token | API token |
+|---|---|---|
+| Comes from | `POST /auth/login` | `POST /auth/api_tokens` |
+| Shape | A signed JWT | Opaque, prefixed `lxt_` |
+| Lives | One hour | Until revoked, or a chosen number of days |
+| Suited to | A browser | A script, a CLI, a desktop or mobile app |
+
+A script cannot hold a password and cannot sign in again every hour, so an API
+token is what makes this usable without a browser. Create one from a signed in
+session, then send it exactly as you would a session token:
+
+```bash
+# Once, from a signed in session.
+curl -X POST https://your_host/api/v1/auth/api_tokens \
+  -H "Authorization: Bearer $SESSION_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "ci pipeline"}'
+
+# Afterwards, from anywhere.
+export LXT_TOKEN=lxt_...
+
+curl https://your_host/api/v1/namespaces/acme_corp/projects \
+  -H "Authorization: Bearer $LXT_TOKEN"
+
+curl -X POST https://your_host/api/v1/projects/12/files \
+  -H "Authorization: Bearer $LXT_TOKEN" \
+  -F 'target_langs=th_th,ja_jp' \
+  -F 'file=@locales/en_us.json'
+```
+
+An API token **is** its account and carries no privilege the person who created
+it does not have. It reaches exactly the namespaces they can reach, and the same
+role rules apply inside an organization.
+
 ### Identifiers in paths
 
 | Segment | Form |
@@ -288,13 +326,74 @@ Ends every session except the one asking, and reports how many.
 Keeping the caller signed in is what makes this usable: the alternative signs
 them out mid request and leaves them unable to confirm it worked.
 
+### API tokens
+
+The credential a machine uses. Opaque rather than signed, deliberately: a JWT
+carries its own expiry and verifies without asking anything, which is the wrong
+trade for something that may live a year, because there is no way to shorten its
+life once it is out. Every request consults the row instead, so revoking one
+takes effect on the next call.
+
+#### `POST /auth/api_tokens`
+
+```json
+{ "name": "ci pipeline", "expires_in_days": 90 }
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `name` | yes | What it is for. Required, because a list of unnamed machine credentials is one nobody can safely prune. |
+| `expires_in_days` | no | 1 to 365. Omitted means it does not expire on its own. |
+
+```json
+{
+  "data": {
+    "api_token": { "id": "...", "name": "ci pipeline", "masked_token": "****a91f" },
+    "token": "lxt_...",
+    "warning": "Copy this token now. It cannot be shown again."
+  }
+}
+```
+
+`token` appears in this one response and nowhere else, ever. Only a digest and
+the last four characters are stored, so nothing can show it again and nothing
+worth stealing is kept.
+
+The `lxt_` prefix is not decoration: a credential that announces what it is can
+be caught by a secret scanner in a commit, a log or a bug report.
+
+An account may hold 20 tokens; the 21st is **400**.
+
+#### `GET /auth/api_tokens`
+
+Lists this account's tokens, identified by name and `masked_token`. No token
+material is ever returned.
+
+#### `DELETE /auth/api_tokens/:tokenId`
+
+Returns **204**. The token stops working on the next request. Another account's
+token is **404**, not 403.
+
+#### What a token may not do
+
+Creating and revoking tokens both require a signed in **session**, not a token.
+A token that can mint tokens is one that can replace itself, which would make
+revoking the original pointless. Reading the list is allowed, so a script can
+check its own standing.
+
 #### What ends a session besides asking
 
 | Event | Effect |
 |---|---|
 | `PATCH /settings/password` | Every other session ends. The one making the change is kept. |
-| `POST /auth/password/reset` | **Every** session ends, including the one asking. A reset is the flow for a password somebody may have lost control of. |
+| `POST /auth/password/reset` | **Every** credential ends, sessions and API tokens alike, including the one asking. |
 | Account deleted | Rows cascade away with it. |
+
+API tokens deliberately survive a settings password change but not a reset. A
+settings change is somebody tidying up, and silently breaking every build in the
+organization would be a poor reward for it. A reset is the flow for a password
+that may already be in somebody else's hands, and whoever held it could have
+minted a token with it, so a reset takes everything.
 
 ---
 

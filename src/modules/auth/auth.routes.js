@@ -4,10 +4,31 @@ const express = require('express');
 const { validate } = require('../../middleware/validate');
 const { authenticate } = require('../../middleware/authenticate');
 const { authLimiter, availabilityLimiter } = require('../../middleware/rateLimit');
+const { ForbiddenError } = require('../../core/errors');
 const controller = require('./auth.controller');
 const schemas = require('./auth.schemas');
 
 const router = express.Router();
+
+/**
+ * Refuses a request made with an API token rather than a signed in session.
+ *
+ * Guards the endpoints that manage credentials themselves. A token that can
+ * mint and revoke tokens is a token that can replace itself, which would make
+ * revoking the original pointless.
+ *
+ * @param {import('express').Request} req Request.
+ * @param {import('express').Response} res Response.
+ * @param {Function} next Express next handler.
+ * @returns {void}
+ */
+function requireSession(req, res, next) {
+  if (req.session?.kind === 'API') {
+    next(new ForbiddenError('Sign in to manage API tokens. A token cannot manage tokens.'));
+    return;
+  }
+  next();
+}
 
 /**
  * Authentication routes.
@@ -59,5 +80,35 @@ router.get('/sessions', authenticate, controller.listSessions);
 router.post('/sessions/revoke_others', authenticate, controller.revokeOtherSessions);
 
 router.delete('/sessions/:sessionId', authenticate, controller.revokeSession);
+
+/*
+ * API tokens.
+ *
+ * The credential a machine uses. Creating one is rate limited like any other
+ * credential endpoint, because a token is a way into the account that outlives
+ * the session that made it.
+ *
+ * Creating a token requires an ordinary session, so a token cannot mint another
+ * token. Otherwise one leaked credential could quietly replace itself forever
+ * and revoking the original would achieve nothing.
+ */
+
+router.post(
+  '/api_tokens',
+  authenticate,
+  requireSession,
+  authLimiter,
+  validate(schemas.createApiTokenSchema),
+  controller.createApiToken,
+);
+
+router.get('/api_tokens', authenticate, controller.listApiTokens);
+
+router.delete(
+  '/api_tokens/:tokenId',
+  authenticate,
+  requireSession,
+  controller.revokeApiToken,
+);
 
 module.exports = router;

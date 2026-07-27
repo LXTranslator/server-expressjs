@@ -82,6 +82,8 @@ consumer.
 | NFR-6 | Payloads validated against strict schemas that drop unknown fields. | Done |
 | NFR-7 | Rate limiting tiered by endpoint sensitivity. | Done |
 | NFR-8 | Repeated login failures lock the account temporarily. | Done |
+| NFR-8a | A session is revocable, and an account may hold many at once. | Done |
+| NFR-8b | The API is usable from a machine through a revocable token, without a password. | Done |
 | NFR-9 | Security headers set, including a restrictive content security policy. | Done |
 | NFR-10 | Cross origin access restricted to an explicit allowlist. | Done |
 | NFR-11 | Errors return generic messages; detail is logged server side only. | Done |
