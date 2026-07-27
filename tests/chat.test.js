@@ -18,6 +18,7 @@ const {
   dispatchTool,
   listToolDefinitions,
   MAX_DOWNLOADS_PER_TURN,
+  MAX_KEYS_PER_CALL,
 } = require('../src/modules/chat/chat.tools');
 const embeddingService = require('../src/modules/chat/embedding.service');
 const config = require('../src/config');
@@ -145,6 +146,7 @@ describe('the assistant', () => {
   describe('the tool catalogue', () => {
     it('declares every capability the chat needs, including a way to stop', () => {
       expect(listToolDefinitions().map((tool) => tool.name).sort()).toEqual([
+        'add_keys',
         'add_languages',
         'check_project_languages',
         'create_export_format',
@@ -974,6 +976,313 @@ describe('the assistant', () => {
           id: '1',
           name: 'create_export_format',
           arguments: { format_id: 'member_made', name: 'Member made' },
+        },
+        {
+          actor: await Account.findByPk(member.account.id),
+          namespace: await Account.findByPk(organization.body.data.namespace.id),
+          namespaceRole: 'MEMBER',
+          attachment: null,
+          sessionId: null,
+          downloads: [],
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/ADMIN|permission|allowed/i);
+    });
+  });
+
+  /*
+   * Adding keys to a file that already exists.
+   *
+   * The capability was always in the API and in the editor; what was missing
+   * was a tool, so the assistant concluded the product could not do it and told
+   * people to upload again. That would have made a second file and paid to
+   * translate everything in it, so the tests care most about the file keeping
+   * its identity and its existing work.
+   */
+  describe('adding keys to an existing file', () => {
+    let projectId;
+    let fileId;
+
+    beforeAll(async () => {
+      const project = await createProject(app, token, namespace, { name: 'merge_project' });
+      projectId = project.id;
+
+      const upload = await request(app)
+        .post(`/api/v1/projects/${projectId}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .field('target_langs', 'th_th')
+        .attach('file', Buffer.from(JSON.stringify({ menu: { start: 'Start' } })), 'merge.json')
+        .expect(202);
+
+      fileId = upload.body.data.file.id;
+      await waitForFile(app, token, fileId);
+    });
+
+    /**
+     * Reads a file's keys back through the editor payload.
+     *
+     * @returns {Promise<string[]>} Key names, sorted.
+     */
+    async function readKeyNames() {
+      const response = await request(app)
+        .get(`/api/v1/files/${fileId}/translations`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      return response.body.data.keys.map((key) => key.key_name).sort();
+    }
+
+    /**
+     * Waits until a merge has actually landed.
+     *
+     * The status flag is no use here. A tool call returns far faster than the
+     * HTTP route does, so polling the status can read READY from before the
+     * merge started and stop immediately. The key appearing is the thing being
+     * waited for, so that is what is waited on.
+     *
+     * @param {string} keyName Key expected to arrive.
+     * @param {number} [timeoutMs] Maximum wait.
+     * @returns {Promise<string[]>} Key names once it has, sorted.
+     */
+    async function waitForKey(keyName, timeoutMs = 15000) {
+      const deadline = Date.now() + timeoutMs;
+
+      while (Date.now() < deadline) {
+        const names = await readKeyNames();
+        if (names.includes(keyName)) return names;
+        await new Promise((resolve) => {
+          setTimeout(resolve, 50);
+        });
+      }
+
+      throw new Error(`The key ${keyName} did not arrive within ${timeoutMs}ms.`);
+    }
+
+    it('adds a key somebody typed into the conversation', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_keys',
+          arguments: { file_id: fileId, keys: { 'menu.quit': 'Quit' } },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.file.id).toBe(fileId);
+      expect(result.existing_key_count).toBe(1);
+
+      expect(await waitForKey('menu.quit')).toEqual(['menu.quit', 'menu.start']);
+    });
+
+    it('keeps the file id rather than making a second file', async () => {
+      const before = await request(app)
+        .get(`/api/v1/projects/${projectId}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await dispatchTool(
+        {
+          id: '1',
+          name: 'add_keys',
+          arguments: { file_id: fileId, keys: { 'menu.options': 'Options' } },
+        },
+        await context(),
+      );
+      await waitForKey('menu.options');
+
+      const after = await request(app)
+        .get(`/api/v1/projects/${projectId}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(after.body.data.files).toHaveLength(before.body.data.files.length);
+      expect(after.body.data.files.map((file) => file.id)).toContain(fileId);
+    });
+
+    it('leaves a key the file already has exactly as it was', async () => {
+      const before = await request(app)
+        .get(`/api/v1/files/${fileId}/translations`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const existing = before.body.data.keys.find((key) => key.key_name === 'menu.start');
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_keys',
+          arguments: {
+            file_id: fileId,
+            keys: { 'menu.start': 'Something else entirely', 'menu.back': 'Back' },
+          },
+        },
+        await context(),
+      );
+
+      expect(result.ok).toBe(true);
+      await waitForKey('menu.back');
+
+      const after = await request(app)
+        .get(`/api/v1/files/${fileId}/translations`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const unchanged = after.body.data.keys.find((key) => key.key_name === 'menu.start');
+
+      // The whole point of merging rather than uploading again: an existing key
+      // keeps its text, its fingerprint and its translations, so nothing that
+      // has already been reviewed is spent or overwritten.
+      expect(unchanged.original_text).toBe(existing.original_text);
+      expect(unchanged.text_hash).toBe(existing.text_hash);
+      expect(after.body.data.keys.map((key) => key.key_name)).toContain('menu.back');
+    });
+
+    it('adds the keys in an attached document', async () => {
+      const attachmentContext = await context();
+      attachmentContext.attachment = {
+        buffer: Buffer.from(JSON.stringify({ hud: { health: 'Health' } })),
+        originalname: 'more.json',
+      };
+
+      const result = await dispatchTool(
+        { id: '1', name: 'add_keys', arguments: { file_id: fileId } },
+        attachmentContext,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(await waitForKey('hud.health')).toContain('hud.health');
+    });
+
+    it('asks for keys rather than inventing a limitation when given neither', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'add_keys', arguments: { file_id: fileId } },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/no keys were given/i);
+      expect(result.instruction).toMatch(/does not need recreating/i);
+    });
+
+    it('refuses to guess when keys and an attachment both arrive', async () => {
+      const bothContext = await context();
+      bothContext.attachment = {
+        buffer: Buffer.from(JSON.stringify({ hud: { armour: 'Armour' } })),
+        originalname: 'both.json',
+      };
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_keys',
+          arguments: { file_id: fileId, keys: { 'hud.hunger': 'Hunger' } },
+        },
+        bothContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.instruction).toMatch(/typed or the ones in the attached file/i);
+    });
+
+    it('refuses more keys in one call than the ceiling allows', async () => {
+      const keys = {};
+      for (let index = 0; index <= MAX_KEYS_PER_CALL; index += 1) {
+        keys[`bulk.key_${index}`] = `Value ${index}`;
+      }
+
+      const result = await dispatchTool(
+        { id: '1', name: 'add_keys', arguments: { file_id: fileId, keys } },
+        await context(),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/more than 200 keys/);
+      expect(result.instruction).toMatch(/JSON file/i);
+    });
+
+    it('refuses a document that is not a JSON object', async () => {
+      const brokenContext = await context();
+      brokenContext.attachment = {
+        buffer: Buffer.from('["not", "an", "object"]'),
+        originalname: 'broken.json',
+      };
+
+      const result = await dispatchTool(
+        { id: '1', name: 'add_keys', arguments: { file_id: fileId } },
+        brokenContext,
+      );
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('refuses a file belonging to somebody else', async () => {
+      const outsider = await registerAccount(app, {
+        user_id: 'merge_outsider',
+        email: 'merge_outsider@example.test',
+      });
+
+      const { Account } = require('../src/infrastructure/database/models');
+      const live = await Account.findByPk(outsider.account.id);
+
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_keys',
+          arguments: { file_id: fileId, keys: { 'menu.stolen': 'Stolen' } },
+        },
+        {
+          actor: live,
+          namespace: live,
+          namespaceRole: 'OWNER',
+          attachment: null,
+          sessionId: null,
+          downloads: [],
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/does not exist/);
+    });
+
+    it('refuses a plain member of an organization', async () => {
+      const member = await registerAccount(app, {
+        user_id: 'merge_member',
+        email: 'merge_member@example.test',
+      });
+
+      const organization = await request(app)
+        .post('/api/v1/namespaces/organizations')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ user_id: 'merge_org', email: 'merge_org@example.test' })
+        .expect(201);
+
+      await request(app)
+        .post(`/api/v1/namespaces/merge_org/settings/members`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ identifier: 'merge_member', role: 'MEMBER' })
+        .expect(201);
+
+      const orgProject = await createProject(app, token, 'merge_org', { name: 'org_merge' });
+      const orgUpload = await request(app)
+        .post(`/api/v1/projects/${orgProject.id}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .field('target_langs', 'th_th')
+        .attach('file', Buffer.from(JSON.stringify({ hello: 'Hello' })), 'org.json')
+        .expect(202);
+      await waitForFile(app, token, orgUpload.body.data.file.id);
+
+      const { Account } = require('../src/infrastructure/database/models');
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'add_keys',
+          arguments: {
+            file_id: orgUpload.body.data.file.id,
+            keys: { 'menu.member': 'Member' },
+          },
         },
         {
           actor: await Account.findByPk(member.account.id),

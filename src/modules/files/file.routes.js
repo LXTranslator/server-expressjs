@@ -274,7 +274,7 @@ router.post(
       project: req.project,
       namespace: req.namespace,
       actor: req.account,
-      upload: req.file,
+      content: fileService.assertJsonObject(req.file.buffer),
     });
 
     res.status(202).json({

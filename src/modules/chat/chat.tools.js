@@ -78,6 +78,16 @@ const MAX_LANGS_PER_CALL = 50;
 const MAX_DOWNLOADS_PER_TURN = 5;
 
 /**
+ * Keys one call may add by naming them.
+ *
+ * Matching the ceiling the retranslate endpoint applies, since both spend
+ * provider quota per key. There is no such limit on an attached document: a
+ * file is how somebody adds a thousand strings, and the refusal says so rather
+ * than leaving them to discover it.
+ */
+const MAX_KEYS_PER_CALL = 200;
+
+/**
  * Wraps a successful result.
  *
  * @param {object} body Result fields.
@@ -1251,6 +1261,131 @@ const TOOLS = [
   },
 
   {
+    name: 'add_keys',
+    description: [
+      'Add new keys to a file that already exists, keeping its file id and everything',
+      'already in it. An existing key is left exactly as it is, with its translations and',
+      'any manual correction; only names the file does not have are added and translated,',
+      'into the languages the file already carries. The keys come either from the JSON file',
+      'attached to this message, or from the keys argument when somebody types them into',
+      'the conversation. Use this whenever somebody wants to add, merge or append strings',
+      'to a file. Never tell them a file cannot be added to, and never upload a second file',
+      'to do it: that would make a new file id and pay to translate everything again.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        file_id: {
+          type: 'string',
+          description: 'File to add the keys to, from list_files.',
+        },
+        keys: {
+          type: 'object',
+          description:
+            'Keys to add, as English source strings, for example {"menu.start": "Start"}. A dotted name is a path, exactly as in an uploaded document. Omit when a file is attached to the message.',
+          additionalProperties: { type: 'string' },
+        },
+      },
+      required: ['file_id'],
+      additionalProperties: false,
+    },
+    schema: z
+      .object({
+        file_id: z.union([z.number(), z.string()]),
+        keys: z.record(z.string().min(1).max(200), z.string()).optional(),
+      })
+      .strict(),
+
+    /**
+     * Merges keys into a file that already exists.
+     *
+     * The two sources are the same document by the time the service sees it.
+     * What differs is only where it came from: a person dropping a file into
+     * the conversation, or a person typing "add menu.start, it says Start".
+     * Both are ordinary requests and neither should require going to another
+     * screen, which is what the absence of this tool used to force.
+     *
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const { access, failure } = await resolveFile(context, args.file_id);
+      if (failure !== null) return failure;
+
+      const denied = requireAdmin(access);
+      if (denied !== null) return denied;
+
+      const inlineKeys = args.keys ?? null;
+
+      if (inlineKeys === null && context.attachment === null) {
+        return fail('No keys were given and no file is attached to this message.', {
+          file: { id: access.file.id, filename: access.file.filename },
+          instruction:
+            'Ask for the key names and their English text, or for a JSON file attached to the message. The file itself is fine and does not need recreating.',
+        });
+      }
+
+      // Both at once is ambiguous rather than additive: the person meant one of
+      // them, and guessing which would quietly ignore the other.
+      if (inlineKeys !== null && context.attachment !== null) {
+        return fail('Keys were given and a file was attached as well.', {
+          instruction:
+            'Ask whether to add the keys that were typed or the ones in the attached file, then call this again with only that one.',
+        });
+      }
+
+      let content;
+      if (inlineKeys === null) {
+        try {
+          content = fileService.assertJsonObject(context.attachment.buffer);
+        } catch (error) {
+          if (!(error instanceof AppError)) throw error;
+          return fail(error.message, {
+            instruction: 'Tell the person what is wrong with the attached document.',
+          });
+        }
+      } else {
+        if (Object.keys(inlineKeys).length === 0) {
+          return fail('No keys were named.', {
+            instruction: 'Ask which keys to add and what each one says in English.',
+          });
+        }
+
+        if (Object.keys(inlineKeys).length > MAX_KEYS_PER_CALL) {
+          return fail(`That is more than ${MAX_KEYS_PER_CALL} keys for one call.`, {
+            instruction:
+              'Ask the person to attach the keys as a JSON file instead, which has no such limit.',
+          });
+        }
+
+        // Text, because that is what the pipeline parses. Serialising here also
+        // means the typed keys go through exactly the path an uploaded document
+        // does, rather than a second one that could drift from it.
+        content = JSON.stringify(inlineKeys);
+      }
+
+      const { file, existingKeyCount } = await fileService.mergeKeys({
+        file: access.file,
+        project: access.project,
+        namespace: access.namespace,
+        actor: context.actor,
+        content,
+      });
+
+      return ok({
+        file: { id: file.id, filename: file.filename, status: file.status },
+        project: { id: access.project.id, name: access.project.name },
+        existing_key_count: existingKeyCount,
+        target_langs: file.targetLangCodes,
+        message: `Adding the new keys to ${file.filename}, which already held ${existingKeyCount}.`,
+        instruction:
+          'The file keeps the same id, and every key it already had keeps its translations untouched. Say that only the new keys are being translated, into the languages the file already has, and that this runs in the background until the file is READY again.',
+      });
+    },
+  },
+
+  {
     name: 'export_file',
     description: [
       'Offer the person a download of a translated file, as a button under the answer.',
@@ -1563,4 +1698,5 @@ module.exports = {
   TOOLS,
   MAX_PROJECTS_PER_CALL,
   MAX_DOWNLOADS_PER_TURN,
+  MAX_KEYS_PER_CALL,
 };
