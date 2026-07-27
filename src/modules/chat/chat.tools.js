@@ -8,10 +8,12 @@ const projectService = require('../projects/project.service');
 const fileService = require('../files/file.service');
 const accountKeyService = require('../accountKeys/accountKey.service');
 const exportFormatService = require('../exportFormats/exportFormat.service');
+const translationService = require('../translations/translation.service');
 const { listProviders, getProvider } = require('../../infrastructure/ai/providers');
 const { File } = require('../../infrastructure/database/models');
 const { MASTER_LANG_CODE } = require('../../infrastructure/database/models/file');
 const { langCodeSchema } = require('../files/file.schemas');
+const { buildDownloadName } = require('../../core/filename');
 const exportFormatSchemas = require('../exportFormats/exportFormat.schemas');
 const { LEAF_SHAPES } = require('../../infrastructure/database/models/exportFormat');
 const embeddingService = require('./embedding.service');
@@ -67,6 +69,15 @@ const MAX_PROJECTS_PER_CALL = 25;
 const MAX_LANGS_PER_CALL = 50;
 
 /**
+ * Downloads one turn may offer.
+ *
+ * A model that has just listed twenty files could otherwise answer with twenty
+ * buttons, which is not an answer. Reaching the ceiling is a refusal it can read
+ * and narrow, exactly like the project ceiling above.
+ */
+const MAX_DOWNLOADS_PER_TURN = 5;
+
+/**
  * Wraps a successful result.
  *
  * @param {object} body Result fields.
@@ -105,6 +116,31 @@ async function resolveProject(context, projectId) {
       access: null,
       failure: fail(
         error instanceof AppError ? error.message : 'That project could not be reached.',
+      ),
+    };
+  }
+}
+
+/**
+ * Resolves a file the caller may see, and reports the failure as a result.
+ *
+ * Through the same resolver the file routes use, which walks the file up to its
+ * project and its namespace. An identifier belonging to somebody else's file
+ * answers "does not exist", so this cannot be used to discover one.
+ *
+ * @param {object} context Tool context.
+ * @param {number|string} fileId Identifier the model supplied.
+ * @returns {Promise<{access: object|null, failure: object|null}>}
+ */
+async function resolveFile(context, fileId) {
+  try {
+    const access = await namespaceService.resolveFileAccess(context.actor, fileId);
+    return { access, failure: null };
+  } catch (error) {
+    return {
+      access: null,
+      failure: fail(
+        error instanceof AppError ? error.message : 'That file could not be reached.',
       ),
     };
   }
@@ -1215,6 +1251,182 @@ const TOOLS = [
   },
 
   {
+    name: 'export_file',
+    description: [
+      'Offer the person a download of a translated file, as a button under the answer.',
+      'Name a locale to offer that one language as JSON; omit it to offer every language',
+      'in one zip archive. export_format chooses the shape of the documents, from the',
+      'formats the namespace offers; call list_export_formats when the person describes a',
+      'shape rather than naming one. filename is what the download saves as, when they ask',
+      'for a particular name. Use this whenever somebody asks for a file, for their',
+      'translations, or to export something: it is the only way to hand them one.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        file_id: {
+          type: 'string',
+          description: 'File to export, from list_files.',
+        },
+        lang: {
+          type: 'string',
+          description:
+            'Locale to export, such as th_th. Omit to offer every locale in one zip archive.',
+        },
+        export_format: {
+          type: 'string',
+          description:
+            'Shape of the documents, such as flat_key_value. Defaults to the value and hash shape.',
+        },
+        filename: {
+          type: 'string',
+          description:
+            'What the download saves as, when the person asks for a particular name, such as "thai_strings". The extension is corrected to match what is actually being sent. Omit for the locale name, or langs.zip for an archive.',
+        },
+      },
+      required: ['file_id'],
+      additionalProperties: false,
+    },
+    schema: z
+      .object({
+        file_id: z.union([z.number(), z.string()]),
+        lang: langCodeSchema.optional(),
+        export_format: z.string().trim().max(50).optional(),
+        filename: z.string().trim().min(1).max(120).optional(),
+      })
+      .strict(),
+
+    /**
+     * Offers a download rather than producing one.
+     *
+     * The document itself is never built here and never enters the result. Two
+     * reasons, and both matter. A locale file is user written text, so feeding
+     * it back through the model is the prompt injection surface this module
+     * exists to avoid; and a file of any size would be paid for as tokens on
+     * every remaining step of the loop.
+     *
+     * What is returned is a reference: which file, which locale, which format.
+     * The browser fetches the bytes from the ordinary download endpoint, which
+     * resolves access again for the person actually clicking. So the offer is
+     * not a capability. Anything the model got wrong about who may read this
+     * file is caught a second time, by the same code an ordinary download goes
+     * through, and an offer for a file the person cannot reach simply fails
+     * when it is used.
+     *
+     * @param {object} args Validated arguments.
+     * @param {object} context Tool context, mutated on success.
+     * @returns {Promise<object>} Tool result.
+     */
+    async handler(args, context) {
+      const { access, failure } = await resolveFile(context, args.file_id);
+      if (failure !== null) return failure;
+
+      if (context.downloads.length >= MAX_DOWNLOADS_PER_TURN) {
+        return fail(`That is more than ${MAX_DOWNLOADS_PER_TURN} downloads for one answer.`, {
+          instruction:
+            'Tell the person which files are waiting and ask which of them they want.',
+        });
+      }
+
+      let format;
+      try {
+        format = await exportFormatService.resolveFormat(
+          access.namespace.id,
+          args.export_format,
+        );
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        return fail(error.message, {
+          instruction:
+            'Tell the person that format does not exist here, and call list_export_formats to offer the ones that do.',
+        });
+      }
+
+      const { keyCount, locales } = await translationService.describeExport(access.file);
+
+      if (keyCount === 0) {
+        return fail('This file has nothing to download yet.', {
+          file: { id: access.file.id, filename: access.file.filename, status: access.file.status },
+          instruction:
+            access.file.status === 'READY'
+              ? 'Tell the person the file holds no keys.'
+              : `Tell the person the file is ${access.file.status} and to try again once it is READY.`,
+        });
+      }
+
+      if (args.lang !== undefined && !locales.includes(args.lang)) {
+        return fail(`This file has no ${args.lang} translations yet.`, {
+          available_langs: locales,
+          instruction:
+            'Tell the person which languages this file does have, and offer one of those or adding the one they asked for.',
+        });
+      }
+
+      const isArchive = args.lang === undefined;
+      const defaultName = isArchive
+        ? translationService.ARCHIVE_FILENAME
+        : `${args.lang}.json`;
+
+      /*
+       * A name the person asked for is theirs; the extension is not. What is
+       * being sent is a JSON document or a zip archive whatever anybody calls
+       * it, and a name that disagrees turns into a file the operating system
+       * opens with the wrong application.
+       */
+      let filename = defaultName;
+      if (args.filename !== undefined) {
+        try {
+          filename = buildDownloadName(args.filename, isArchive ? '.zip' : '.json');
+        } catch (error) {
+          if (!(error instanceof AppError)) throw error;
+          return fail(error.message, {
+            instruction: 'Ask the person for a different name, or offer to use the default one.',
+          });
+        }
+      }
+
+      const download = {
+        file_id: access.file.id,
+        filename,
+        lang: isArchive ? null : args.lang,
+        langs: isArchive ? locales : [args.lang],
+        export_format: format.formatId,
+        format_name: format.name,
+      };
+
+      /*
+       * Twice for the same thing is one button, not two. A model that calls
+       * this again after describing it should not double the offer, and
+       * somebody who asks for the same export under a different name has
+       * renamed one download rather than asked for a second.
+       */
+      const existingIndex = context.downloads.findIndex(
+        (existing) =>
+          existing.file_id === download.file_id &&
+          existing.lang === download.lang &&
+          existing.export_format === download.export_format,
+      );
+      if (existingIndex === -1) {
+        context.downloads.push(download);
+      } else {
+        context.downloads[existingIndex] = download;
+      }
+
+      return ok({
+        download,
+        project: { id: access.project.id, name: access.project.name },
+        key_count: keyCount,
+        message:
+          download.lang === null
+            ? `Ready to download ${locales.length} language(s) of ${access.file.filename} as ${download.filename}, written in ${format.name}.`
+            : `Ready to download ${download.lang} from ${access.file.filename} as ${download.filename}, written in ${format.name}.`,
+        instruction:
+          'Say what the download holds, what it is called and which format it is written in. The button is already under your answer, so do not offer a link, a path or the file content.',
+      });
+    },
+  },
+
+  {
     name: 'find_chat',
     description:
       'Search this person’s earlier conversations in the current namespace, by meaning when an embedding model is configured and by text otherwise.',
@@ -1345,4 +1557,10 @@ async function dispatchTool(call, context) {
   }
 }
 
-module.exports = { listToolDefinitions, dispatchTool, TOOLS, MAX_PROJECTS_PER_CALL };
+module.exports = {
+  listToolDefinitions,
+  dispatchTool,
+  TOOLS,
+  MAX_PROJECTS_PER_CALL,
+  MAX_DOWNLOADS_PER_TURN,
+};

@@ -14,7 +14,11 @@ const {
   AccountApiKey,
 } = require('../src/infrastructure/database/models');
 const chatLogService = require('../src/modules/chat/chatLog.service');
-const { dispatchTool, listToolDefinitions } = require('../src/modules/chat/chat.tools');
+const {
+  dispatchTool,
+  listToolDefinitions,
+  MAX_DOWNLOADS_PER_TURN,
+} = require('../src/modules/chat/chat.tools');
 const embeddingService = require('../src/modules/chat/embedding.service');
 const config = require('../src/config');
 
@@ -145,6 +149,7 @@ describe('the assistant', () => {
         'check_project_languages',
         'create_export_format',
         'create_project',
+        'export_file',
         'find_chat',
         'get_project_description',
         'list_export_formats',
@@ -322,6 +327,7 @@ describe('the assistant', () => {
         namespaceRole: 'OWNER',
         attachment: null,
         sessionId: null,
+        downloads: [],
       };
     }
 
@@ -560,6 +566,7 @@ describe('the assistant', () => {
             namespaceRole: 'OWNER',
             attachment: null,
             sessionId: null,
+            downloads: [],
           },
         );
 
@@ -974,11 +981,324 @@ describe('the assistant', () => {
           namespaceRole: 'MEMBER',
           attachment: null,
           sessionId: null,
+          downloads: [],
         },
       );
 
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/ADMIN|permission|allowed/i);
+    });
+  });
+
+  /*
+   * Handing somebody a file.
+   *
+   * The tool offers a download rather than producing one, so what is asserted
+   * here is the offer: that it names a file the caller may actually read, in a
+   * format that exists, for a language that is actually there, and that no
+   * document is ever carried back through the model.
+   */
+  describe('offering a download', () => {
+    let fileId;
+    let downloadContext;
+
+    beforeAll(async () => {
+      const project = await createProject(app, token, namespace, { name: 'export_project' });
+
+      const upload = await request(app)
+        .post(`/api/v1/projects/${project.id}/files`)
+        .set('Authorization', `Bearer ${token}`)
+        .field('target_langs', 'th_th')
+        .attach(
+          'file',
+          Buffer.from(JSON.stringify({ greeting: { hello: 'Hello' }, save: 'Save' })),
+          'export_case.json',
+        )
+        .expect(202);
+
+      fileId = upload.body.data.file.id;
+      await waitForFile(app, token, fileId);
+    });
+
+    beforeEach(async () => {
+      downloadContext = await context();
+    });
+
+    it('offers one locale as a download the client can render', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId, lang: 'th_th' } },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.download).toEqual({
+        file_id: fileId,
+        filename: 'th_th.json',
+        lang: 'th_th',
+        langs: ['th_th'],
+        export_format: 'default',
+        format_name: 'Value and hash',
+      });
+      expect(downloadContext.downloads).toEqual([result.download]);
+    });
+
+    it('offers every locale as one archive when no language is named', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId } },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.download.filename).toBe('langs.zip');
+      expect(result.download.lang).toBeNull();
+      expect(result.download.langs.sort()).toEqual(['en_us', 'th_th']);
+    });
+
+    it('carries a reference rather than the document itself', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId, lang: 'th_th' } },
+        downloadContext,
+      );
+
+      // The translated strings are user written text. Sending them back through
+      // the model is the injection surface the tool layer exists to avoid, and
+      // it would be paid for as tokens on every remaining step of the loop.
+      const serialised = JSON.stringify(result);
+      expect(serialised).not.toContain('Hello');
+      expect(serialised).not.toContain('greeting.hello');
+    });
+
+    it('writes the offer in a format the namespace ships', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', export_format: 'flat_key_value' },
+        },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.download.export_format).toBe('flat_key_value');
+      expect(result.download.format_name).toBe('Flat key and value');
+    });
+
+    it('refuses a format the namespace does not have', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', export_format: 'invented_shape' },
+        },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/no export format called/);
+      expect(downloadContext.downloads).toEqual([]);
+    });
+
+    it('refuses a language the file does not have, naming the ones it does', async () => {
+      const result = await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId, lang: 'ja_jp' } },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/no ja_jp translations/);
+      expect(result.available_langs.sort()).toEqual(['en_us', 'th_th']);
+      expect(downloadContext.downloads).toEqual([]);
+    });
+
+    it('saves under a name the person asked for', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', filename: 'thai_strings' },
+        },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.download.filename).toBe('thai_strings.json');
+    });
+
+    it('does not double an extension the person already typed', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', filename: 'thai.json' },
+        },
+        downloadContext,
+      );
+
+      expect(result.download.filename).toBe('thai.json');
+    });
+
+    it('names an archive with the archive extension whatever was asked for', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, filename: 'everything.json' },
+        },
+        downloadContext,
+      );
+
+      // The bytes are a zip archive. A name claiming otherwise is a file the
+      // operating system opens with the wrong application.
+      expect(result.download.filename).toBe('everything.json.zip');
+    });
+
+    it('strips a directory out of a name rather than carrying it', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', filename: '../../etc/passwd' },
+        },
+        downloadContext,
+      );
+
+      // The name reaches a browser rather than a filesystem, but it is reduced
+      // to a bare name for the same reason an upload's is.
+      expect(result.ok).toBe(true);
+      expect(result.download.filename).toBe('passwd.json');
+    });
+
+    it('refuses traversal that survives the directory being stripped', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', filename: 'th..th' },
+        },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/must not contain a path/);
+      expect(downloadContext.downloads).toEqual([]);
+    });
+
+    it('refuses a name the operating system reserves', async () => {
+      const result = await dispatchTool(
+        {
+          id: '1',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', filename: 'CON' },
+        },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/reserved/);
+    });
+
+    it('renames one offer rather than adding a second', async () => {
+      await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId, lang: 'th_th' } },
+        downloadContext,
+      );
+      await dispatchTool(
+        {
+          id: '2',
+          name: 'export_file',
+          arguments: { file_id: fileId, lang: 'th_th', filename: 'renamed' },
+        },
+        downloadContext,
+      );
+
+      expect(downloadContext.downloads).toHaveLength(1);
+      expect(downloadContext.downloads[0].filename).toBe('renamed.json');
+    });
+
+    it('offers the same download once however often it is asked for', async () => {
+      const call = {
+        id: '1',
+        name: 'export_file',
+        arguments: { file_id: fileId, lang: 'th_th' },
+      };
+
+      await dispatchTool(call, downloadContext);
+      await dispatchTool(call, downloadContext);
+
+      expect(downloadContext.downloads).toHaveLength(1);
+    });
+
+    it('stops offering downloads past the ceiling for one answer', async () => {
+      for (let index = 0; index < MAX_DOWNLOADS_PER_TURN; index += 1) {
+        // Distinct offers, so the duplicate check is not what fills the list.
+        downloadContext.downloads.push({
+          file_id: fileId,
+          filename: `filler_${index}.json`,
+          lang: `filler_${index}`,
+          langs: [],
+          export_format: 'default',
+          format_name: 'Value and hash',
+        });
+      }
+
+      const result = await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId, lang: 'th_th' } },
+        downloadContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/more than 5 downloads/);
+      expect(downloadContext.downloads).toHaveLength(MAX_DOWNLOADS_PER_TURN);
+    });
+
+    it('refuses a file belonging to somebody else, without confirming it exists', async () => {
+      const outsider = await registerAccount(app, {
+        user_id: 'export_outsider',
+        email: 'export_outsider@example.test',
+      });
+
+      const { Account } = require('../src/infrastructure/database/models');
+      const live = await Account.findByPk(outsider.account.id);
+      const outsiderContext = {
+        actor: live,
+        namespace: live,
+        namespaceRole: 'OWNER',
+        attachment: null,
+        sessionId: null,
+        downloads: [],
+      };
+
+      const result = await dispatchTool(
+        { id: '1', name: 'export_file', arguments: { file_id: fileId, lang: 'th_th' } },
+        outsiderContext,
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/does not exist/);
+      expect(outsiderContext.downloads).toEqual([]);
+    });
+
+    it('reaches the client on the turn payload', async () => {
+      const response = await say({
+        message: `#call:export_file {"file_id":"${fileId}","lang":"th_th"}`,
+      }).expect(200);
+
+      expect(response.body.data.downloads).toEqual([
+        {
+          file_id: fileId,
+          filename: 'th_th.json',
+          lang: 'th_th',
+          langs: ['th_th'],
+          export_format: 'default',
+          format_name: 'Value and hash',
+        },
+      ]);
+    });
+
+    it('offers nothing on a turn that exported nothing', async () => {
+      const response = await say({ message: 'Just saying hello' }).expect(200);
+
+      expect(response.body.data.downloads).toEqual([]);
     });
   });
 
@@ -1256,6 +1576,7 @@ describe('the assistant', () => {
         namespaceRole: 'OWNER',
         attachment: null,
         sessionId: null,
+        downloads: [],
       };
     }
 
@@ -1352,6 +1673,7 @@ describe('the assistant', () => {
           namespaceRole: 'OWNER',
           attachment: null,
           sessionId: null,
+          downloads: [],
         },
       );
 
@@ -2077,6 +2399,7 @@ describe('the assistant', () => {
       namespaceRole: 'OWNER',
       attachment: null,
       sessionId: conversation.id,
+      downloads: [],
     };
   }
 });

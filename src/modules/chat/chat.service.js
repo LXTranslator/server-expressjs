@@ -45,6 +45,11 @@ const { listToolDefinitions, dispatchTool } = require('./chat.tools');
  * buffer that survives a failed write and retries, and the embedding is
  * attached afterwards. Neither is on the path of the reply.
  *
+ * A turn may also come back offering downloads. Those are references to a file
+ * and a format, never bytes: the client renders each as a button that fetches
+ * from the download endpoint, which authorises the person clicking it. No file
+ * content passes through the model, and an offer is not a permission.
+ *
  * This runs on the main thread rather than on a worker, unlike the translation
  * pipeline. The pipeline is moved off because it parses and hashes, which is
  * CPU work that would stall the event loop. A chat turn is network waiting plus
@@ -123,6 +128,13 @@ async function converse({ actor, namespace, namespaceRole, message, sessionId, a
     namespaceRole,
     attachment: attachment ?? null,
     sessionId: session,
+    /*
+     * Downloads this turn is offering. A tool appends a reference here rather
+     * than a document: the client turns each one into a button that fetches
+     * from the ordinary download endpoint, which authorises the person
+     * clicking it. Nothing in here is a grant, and no file content is carried.
+     */
+    downloads: [],
   };
 
   const toolCalls = [];
@@ -278,6 +290,9 @@ async function converse({ actor, namespace, namespaceRole, message, sessionId, a
     answer,
     namespace: context.namespace.userId,
     tool_calls: toolCalls,
+    // References, not documents. They belong to this answer rather than to the
+    // stored conversation, so reopening it later shows the text without them.
+    downloads: context.downloads,
     steps,
     stopped_by_tool: stopped,
     token_usage: totalTokens,

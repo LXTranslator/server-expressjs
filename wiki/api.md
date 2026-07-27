@@ -872,6 +872,7 @@ The attachment passes exactly the checks an ordinary upload passes.
     "answer": "The web app project has th_th and ja_jp.",
     "namespace": "acme_corp",
     "tool_calls": [{ "name": "check_project_languages", "ok": true }],
+    "downloads": [],
     "steps": 2,
     "stopped_by_tool": false,
     "token_usage": 812,
@@ -883,6 +884,35 @@ The attachment passes exactly the checks an ordinary upload passes.
 `steps` never exceeds `AGENTS_CHAT_REPEAT`, default 5. A tool that refuses does
 not fail the request: it appears in `tool_calls` with `ok: false` and an
 `error`, and the assistant explains it in the answer.
+
+`downloads` holds what `export_file` offered on this turn, at most five, and is
+empty on a turn that offered none:
+
+```json
+{
+  "file_id": "...",
+  "filename": "th_th.json",
+  "lang": "th_th",
+  "langs": ["th_th"],
+  "export_format": "flat_key_value",
+  "format_name": "Flat key and value"
+}
+```
+
+Each entry is a reference, never a document. A client renders one as a download
+control and fetches the bytes from `GET /files/:fileId/download` with the same
+`lang` and `export_format`, which resolves access again for whoever is asking.
+An offer is therefore not a grant, and no file content passes through the model.
+
+`filename` is what the control saves as. It defaults to the locale name, or
+`langs.zip` for an archive, and the person may ask for another: "call it thai
+strings" gives `thai_strings.json`. The name is reduced to a bare filename with
+no path, and its extension is corrected to match what is actually being sent, so
+a name cannot describe a zip archive as JSON.
+
+They belong to the answer rather than to the stored conversation, so
+`GET /namespaces/:namespace/chat/sessions/:sessionId` replays the text without
+them.
 
 **404** when `session_id` names a conversation that is not the caller's own,
 which is checked before anything is spent.
@@ -911,6 +941,7 @@ replaces that, and nothing rewrites a chosen name afterwards.
 | `add_languages` | Adds one language, several, or every one already in use, to one project, several, or all | `ADMIN` in an organization |
 | `list_export_formats` | The download shapes this namespace offers, each with a sample | Namespace access |
 | `create_export_format` | Creates a download shape for the namespace | `ADMIN` in an organization |
+| `export_file` | Offers a file as a download on the answer: one locale, or every locale as one archive, under a name the person may choose | File access |
 | `find_chat` | Searches the caller's own past conversations | Namespace access |
 | `stop` | Ends the turn with a summary | None |
 
