@@ -68,6 +68,10 @@ RATE_LIMIT_AVAILABILITY_MAX=20
 RATE_LIMIT_UPLOAD_MAX=20
 RATE_LIMIT_CHAT_MAX=30
 
+# API usage record
+API_USAGE_LOG=true
+API_USAGE_RETENTION_DAYS=90
+
 # Uploads
 UPLOAD_STORAGE_DIR=./storage/uploads
 UPLOAD_MAX_BYTES=2097152
@@ -199,6 +203,8 @@ required for a development or test run.
 | `RATE_LIMIT_AVAILABILITY_MAX` | no | `20` | Availability probe requests per window. |
 | `RATE_LIMIT_UPLOAD_MAX` | no | `20` | Uploads per window. |
 | `RATE_LIMIT_CHAT_MAX` | no | `30` | Assistant turns per window. One turn may be several provider calls. |
+| `API_USAGE_LOG` | no | `true` | Record every authenticated request. Turning it off answers nothing about the past. |
+| `API_USAGE_RETENTION_DAYS` | no | `90` | How long usage entries are kept. |
 | `UPLOAD_STORAGE_DIR` | no | `./storage/uploads` | Root for archived uploads. |
 | `UPLOAD_MAX_BYTES` | no | `2097152` | Maximum upload size in bytes. |
 | `UPLOAD_MAX_JSON_DEPTH` | no | `20` | Maximum nesting depth accepted. |

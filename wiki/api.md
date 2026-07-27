@@ -381,6 +381,86 @@ A token that can mint tokens is one that can replace itself, which would make
 revoking the original pointless. Reading the list is allowed, so a script can
 check its own standing.
 
+### API usage
+
+Every authenticated request is recorded: who made it, with which credential,
+what they asked for and what came back. Once a credential can act without a
+person present, nothing else answers "what has been done on this account".
+
+That matters most for machine credentials. A session belongs to somebody who
+remembers using it; a token in a build server does not, and "this token has not
+been used in four months" or "this token deleted forty files on Tuesday" are the
+only ways to notice either that it is dead weight or that somebody else has it.
+
+**What is not recorded is part of the design.** No request body, no response
+body, no headers, no query string, no address. A body carries the very things
+this system is careful about elsewhere, translation text and provider
+credentials among them, and a log accumulating them would quietly become the
+most sensitive table in the schema. There is no column that could hold one.
+
+Unauthenticated requests are not recorded either: there is no account to
+attribute them to, and sign in attempts belong to the lockout counter and the
+application log rather than here.
+
+#### `GET /auth/usage`
+
+| Query | Required | Notes |
+|---|---|---|
+| `limit` | no | 1 to 500. Defaults to 100. |
+| `session_id` | no | Narrow to one credential, which is how a token is audited. |
+
+```json
+{
+  "data": {
+    "usage": [
+      {
+        "id": 4821,
+        "session_id": "...",
+        "credential_kind": "API",
+        "method": "POST",
+        "path": "/api/v1/projects/12/files",
+        "status_code": 202,
+        "duration_ms": 43,
+        "created_at": "2026-07-27T09:14:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+Always the caller's own. A usage row names a path that may itself carry another
+account's identifiers, so this is never queried by anything a caller supplied on
+its own.
+
+#### `GET /auth/usage/summary`
+
+| Query | Required | Notes |
+|---|---|---|
+| `days` | no | 1 to 90. Defaults to 7. |
+
+```json
+{
+  "data": {
+    "window_days": 7,
+    "total_requests": 1284,
+    "failed_requests": 3,
+    "by_credential": [
+      { "session_id": "...", "credential_kind": "API", "requests": 1200, "failed": 0 }
+    ]
+  }
+}
+```
+
+A thousand lines of log answers "what happened" and not "is anything wrong". The
+counts do: a credential nobody remembers creating with traffic on it, or a run
+of failures, is visible here and invisible in the list.
+
+#### Retention
+
+Entries are kept for `API_USAGE_RETENTION_DAYS`, ninety by default, and the
+record outlives the credential that made it. An audit trail that disappeared
+when somebody deleted the token would be exactly the wrong way round.
+
 #### What ends a session besides asking
 
 | Event | Effect |

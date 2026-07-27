@@ -10,6 +10,7 @@ const defineTranslationKey = require('./translationKey');
 const defineTranslation = require('./translation');
 const defineAuthToken = require('./authToken');
 const defineAccountSession = require('./accountSession');
+const defineApiUsageLog = require('./apiUsageLog');
 const defineExportFormat = require('./exportFormat');
 const defineAccountApiKey = require('./accountApiKey');
 const defineAiChatLog = require('./aiChatLog');
@@ -23,6 +24,7 @@ const TranslationKey = defineTranslationKey(sequelize);
 const Translation = defineTranslation(sequelize);
 const AuthToken = defineAuthToken(sequelize);
 const AccountSession = defineAccountSession(sequelize);
+const ApiUsageLog = defineApiUsageLog(sequelize);
 const ExportFormat = defineExportFormat(sequelize);
 const AccountApiKey = defineAccountApiKey(sequelize);
 const AiChatLog = defineAiChatLog(sequelize);
@@ -209,6 +211,24 @@ AccountSession.belongsTo(Account, {
   foreignKey: { name: 'accountId', field: 'account_id' },
 });
 
+/*
+ * Account to what has been done on it.
+ *
+ * Cascades with the account, because a deleted account leaves nothing behind.
+ * The link to the credential that made each request is a plain column rather
+ * than an association: a revoked token is eventually purged, and the record of
+ * what it did has to outlive it.
+ */
+Account.hasMany(ApiUsageLog, {
+  as: 'apiUsage',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+ApiUsageLog.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
 // Account to short lived tokens.
 Account.hasMany(AuthToken, {
   as: 'authTokens',
@@ -230,6 +250,7 @@ module.exports = {
   Translation,
   AuthToken,
   AccountSession,
+  ApiUsageLog,
   ExportFormat,
   AccountApiKey,
   AiChatLog,

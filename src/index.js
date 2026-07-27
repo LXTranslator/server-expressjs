@@ -5,6 +5,7 @@ const logger = require('./core/logger');
 const createApp = require('./app');
 const { connectDatabase, syncDatabase, closeDatabase } = require('./infrastructure/database/sequelize');
 const { translationPool } = require('./workers/pool');
+const usageService = require('./modules/usage/usage.service');
 const { purgeExpiredTokens } = require('./modules/auth/token.service');
 
 // Loading the model registry applies every association before the first query.
@@ -31,6 +32,7 @@ async function start() {
   await syncDatabase();
 
   translationPool.start();
+  usageService.startFlushing();
 
   const app = createApp();
   const server = app.listen(config.app.port, config.app.host, () => {
@@ -69,6 +71,9 @@ async function start() {
 
     server.close(async () => {
       try {
+        // Drained before the connection closes, so a shutdown does not throw
+        // away the last few seconds of the record.
+        await usageService.stopFlushing();
         await translationPool.shutdown();
         await closeDatabase();
         logger.info('Shutdown complete.', {});

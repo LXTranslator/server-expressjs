@@ -5,6 +5,7 @@ const { validated } = require('../../middleware/validate');
 const authService = require('./auth.service');
 const sessionService = require('./session.service');
 const apiTokenService = require('./apiToken.service');
+const usageService = require('../usage/usage.service');
 
 /**
  * HTTP handlers for the authentication module.
@@ -224,6 +225,36 @@ const revokeApiToken = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+/**
+ * GET /auth/usage
+ * What has been done on this account, newest first.
+ */
+const listUsage = asyncHandler(async (req, res) => {
+  const query = validated(req, 'query');
+  const usage = await usageService.listUsage({
+    // Always the caller's own. A usage row names a path that may itself carry
+    // another account's identifiers, so this is never queried by anything a
+    // caller supplied on its own.
+    accountId: req.account.id,
+    sessionId: query.session_id,
+    limit: query.limit,
+  });
+  res.json({ data: { usage } });
+});
+
+/**
+ * GET /auth/usage/summary
+ * Totals by credential, which is what makes an unfamiliar one visible.
+ */
+const usageSummary = asyncHandler(async (req, res) => {
+  const query = validated(req, 'query');
+  const summary = await usageService.summariseUsage({
+    accountId: req.account.id,
+    days: query.days,
+  });
+  res.json({ data: summary });
+});
+
 module.exports = {
   availability,
   register,
@@ -238,4 +269,6 @@ module.exports = {
   createApiToken,
   listApiTokens,
   revokeApiToken,
+  listUsage,
+  usageSummary,
 };

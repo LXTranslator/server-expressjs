@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const helmet = require('helmet');
+const { recordUsage } = require('./middleware/recordUsage');
 const cors = require('cors');
 const config = require('./config');
 const logger = require('./core/logger');
@@ -93,6 +94,11 @@ function createApp() {
     res.setHeader('X-Request-Id', req.id);
     next();
   });
+
+  // Before the routes, so it sees every authenticated request whatever the
+  // route decides. It reads the account after the response, since
+  // authentication runs downstream of this point.
+  app.use(recordUsage);
 
   app.use(globalLimiter);
 
