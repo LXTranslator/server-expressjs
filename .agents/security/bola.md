@@ -1,5 +1,5 @@
 ---
-name: Broken Object Level Authorization
+name: bola
 description: Verify ownership of every referenced record on every API call in the LXTranslator server.
 ---
 

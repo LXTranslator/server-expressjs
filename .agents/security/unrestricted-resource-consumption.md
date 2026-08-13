@@ -1,5 +1,5 @@
 ---
-name: Unrestricted Resource Consumption
+name: unrestricted-resource-consumption
 description: Bound every expensive operation in the LXTranslator server so one caller cannot exhaust it.
 ---
 

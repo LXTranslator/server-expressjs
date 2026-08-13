@@ -1,5 +1,5 @@
 ---
-name: Security Logging and Alerting
+name: logging-and-alerting
 description: Log security relevant events with sensitive values redacted in the LXTranslator server.
 ---
 

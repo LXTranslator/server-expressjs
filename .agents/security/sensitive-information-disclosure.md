@@ -1,5 +1,5 @@
 ---
-name: Sensitive Information Disclosure
+name: sensitive-information-disclosure
 description: Control what leaves the system in AI provider requests and in API responses.
 ---
 

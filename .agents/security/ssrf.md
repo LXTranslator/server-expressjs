@@ -1,5 +1,5 @@
 ---
-name: Server Side Request Forgery
+name: ssrf
 description: Restrict outbound requests to a fixed provider registry in the LXTranslator server.
 ---
 

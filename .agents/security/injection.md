@@ -1,5 +1,5 @@
 ---
-name: Injection Prevention
+name: injection
 description: Prevent SQL, command and prototype pollution injection in the LXTranslator server.
 ---
 
