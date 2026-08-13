@@ -1,5 +1,5 @@
 ---
-name: Software Supply Chain
+name: supply-chain
 description: Dependency selection, pinning and auditing rules for the LXTranslator server.
 ---
 

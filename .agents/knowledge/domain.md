@@ -1,5 +1,5 @@
 ---
-name: Translation Domain
+name: translation-domain
 description: Concepts and invariants an agent must understand before changing the LXTranslator server.
 ---
 

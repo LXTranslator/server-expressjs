@@ -1,5 +1,5 @@
 ---
-name: Secure File Upload
+name: secure-file-upload
 description: Layered validation of uploaded translation files in the LXTranslator server.
 ---
 

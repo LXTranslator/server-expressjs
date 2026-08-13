@@ -1,5 +1,5 @@
 ---
-name: Mishandling of Exceptional Conditions
+name: exceptional-conditions
 description: Handle every error without leaking internal detail to clients in the LXTranslator server.
 ---
 

@@ -26,7 +26,6 @@ jest.config.js
 .github/
 .agents/
 wiki/
-INDEX.md
 README.md
 *.md
 .vscode/

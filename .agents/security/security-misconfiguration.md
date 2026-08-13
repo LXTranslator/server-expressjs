@@ -1,5 +1,5 @@
 ---
-name: Security Misconfiguration
+name: security-misconfiguration
 description: Hardened defaults and deployment configuration rules for the LXTranslator server.
 ---
 

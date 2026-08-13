@@ -1,5 +1,5 @@
 ---
-name: Broken Access Control
+name: broken-access-control
 description: Deny by default authorization enforced through namespace resolution in the LXTranslator server.
 ---
 

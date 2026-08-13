@@ -1,5 +1,5 @@
 ---
-name: Authentication Failures
+name: authentication-failures
 description: Session handling, credential storage, lockout and single use token rules for the LXTranslator server.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: Secrets Management
+name: secrets-management
 description: Prevent API keys, passwords and tokens from being written into source, logs or responses in the LXTranslator server.
 ---
 

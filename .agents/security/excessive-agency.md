@@ -1,5 +1,5 @@
 ---
-name: Excessive Agency
+name: excessive-agency
 description: Keep every action an AI model can trigger behind an authorization check written in backend code in the LXTranslator server.
 ---
 

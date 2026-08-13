@@ -1,5 +1,5 @@
 ---
-name: Path Traversal Prevention
+name: path-traversal
 description: Keep every filesystem operation inside the storage root in the LXTranslator server.
 ---
 

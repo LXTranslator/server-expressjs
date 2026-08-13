@@ -1,5 +1,5 @@
 ---
-name: Cryptographic Failures
+name: cryptographic-failures
 description: Correct use of encryption and hashing for stored credentials, passwords and change tracking fingerprints.
 ---
 

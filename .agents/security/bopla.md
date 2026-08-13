@@ -1,5 +1,5 @@
 ---
-name: Broken Object Property Level Authorization
+name: bopla
 description: Prevent mass assignment and excessive data exposure in the LXTranslator server.
 ---
 
