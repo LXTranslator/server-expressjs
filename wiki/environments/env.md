@@ -101,6 +101,15 @@ WORKER_TASK_TIMEOUT_MS=300000
 # The second factor. The name is what an authenticator app shows above the code.
 AUTHENTICATION_NAME=LXTranslator
 
+# Provider sign in. Both halves of a pair are needed, or the provider is simply
+# absent and the interface offers no button for it. Register the application at
+# github.com/settings/developers or gitlab.com/-/user_settings/applications with
+# the callback URL {CLIENT_URL}/oauth-callback.
+GITHUB_OAUTH_CLIENT_ID=your_github_oauth_client_id
+GITHUB_OAUTH_CLIENT_SECRET=your_github_oauth_client_secret
+GITLAB_OAUTH_CLIENT_ID=your_gitlab_oauth_client_id
+GITLAB_OAUTH_CLIENT_SECRET=your_gitlab_oauth_client_secret
+
 # Mail. The console transport logs the message instead of sending it.
 MAIL_TRANSPORT=console
 MAIL_FROM=LXTranslator <no_reply@lxtranslator.local>
@@ -153,6 +162,13 @@ Generate the two secrets with a cryptographic source, never by hand:
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
+
+Provider sign in needs no endpoint configuration: github.com and gitlab.com are
+compiled in as constants, because a configurable base URL would turn a sign in
+into an arbitrary outbound request. That is also why a self hosted GitLab or a
+GitHub Enterprise Server is not supported. The callback URL is derived from
+`CLIENT_URL` as `{CLIENT_URL}/oauth-callback`, so it is the one value that must
+match what you registered with the provider.
 
 `JWT_SECRET` signs every session and action token. `ENCRYPTION_PASSPHRASE`
 derives the AES key that wraps stored provider credentials. **Changing
@@ -224,6 +240,10 @@ required for a development or test run.
 | `AGENTS_CHAT_LOG_BUFFER` | no | `500` | Chat logs held in memory while the database is unavailable. At the ceiling the oldest is dropped and logged. |
 | `AGENTS_CHAT_LOG_RETRY_MS` | no | `5000` | Delay before retrying a failed chat log write. |
 | `AGENTS_CHAT_EMBED_BATCH` | no | `50` | Rows one embedding backfill request may process. |
+| `GITHUB_OAUTH_CLIENT_ID` | no | unset | GitHub OAuth application identifier. A provider is offered only when both halves are set; with neither, the application behaves exactly as it did before. |
+| `GITHUB_OAUTH_CLIENT_SECRET` | no | unset | GitHub OAuth application secret. Setting one half without the other is refused at boot when `PROD=true`. |
+| `GITLAB_OAUTH_CLIENT_ID` | no | unset | GitLab OAuth application identifier, for gitlab.com. |
+| `GITLAB_OAUTH_CLIENT_SECRET` | no | unset | GitLab OAuth application secret. |
 | `AUTHENTICATION_NAME` | no | `LXTranslator` | Issuer label an authenticator app shows above the code, so somebody with several accounts in the app can tell which one this is. Refused at boot if it contains a colon, which separates the two halves of the `otpauth://` label, or a control character, or runs past 40 characters. |
 | `WORKER_POOL_SIZE` | no | `2` | Translation worker threads. |
 | `WORKER_TASK_TIMEOUT_MS` | no | `300000` | Maximum duration of one job. |

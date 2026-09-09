@@ -10,6 +10,7 @@ const schemas = require('./auth.schemas');
 const mfaController = require('./mfa.controller');
 const mfaSchemas = require('./mfa.schemas');
 const mfaRoutes = require('./mfa.routes');
+const oauthRoutes = require('./oauth.routes');
 
 const router = express.Router();
 
@@ -66,6 +67,7 @@ router.post(
 // Mounted here rather than in routes/index.js so that /auth stays one mount
 // point and requireSession above can be handed straight to it.
 router.use('/mfa', mfaRoutes(requireSession));
+router.use('/oauth', oauthRoutes(requireSession));
 
 router.post(
   '/password/forgot',

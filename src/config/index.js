@@ -130,6 +130,30 @@ function resolveIssuerName() {
   return name;
 }
 
+/**
+ * Reads one provider's credential pair.
+ *
+ * Half a pair is a mistake rather than a decision: it looks configured, offers
+ * the button, and fails at the token exchange. In production that is refused at
+ * boot, where it is cheap to notice.
+ *
+ * @param {string} prefix Environment variable prefix, such as `GITHUB`.
+ * @returns {{clientId: string|undefined, clientSecret: string|undefined}} The pair.
+ * @throws {Error} When exactly one half is set while PROD is enabled.
+ */
+function resolveOauthCredentials(prefix) {
+  const clientId = readString(`${prefix}_OAUTH_CLIENT_ID`);
+  const clientSecret = readString(`${prefix}_OAUTH_CLIENT_SECRET`);
+
+  if (isProduction && Boolean(clientId) !== Boolean(clientSecret)) {
+    throw new Error(
+      `${prefix}_OAUTH_CLIENT_ID and ${prefix}_OAUTH_CLIENT_SECRET must be set together.`,
+    );
+  }
+
+  return { clientId, clientSecret };
+}
+
 const config = Object.freeze({
   isProduction,
   isTest,
@@ -163,6 +187,23 @@ const config = Object.freeze({
     maxFailedLogins: readInteger('MAX_FAILED_LOGINS', 5, { min: 3, max: 20 }),
     lockoutMinutes: readInteger('LOCKOUT_MINUTES', 15, { min: 1, max: 1440 }),
     corsOrigins: readList('CORS_ORIGINS', ['http://localhost:5173', 'http://localhost:3000']),
+  }),
+
+  /**
+   * Provider sign in credentials.
+   *
+   * Only the client identifier and secret are configurable. Every endpoint an
+   * adapter reaches is a constant inside it, because a configurable base URL
+   * turns a sign in into an arbitrary outbound request.
+   *
+   * `readString` with no fallback yields undefined, so a provider with neither
+   * half set is simply absent. Nothing here is required, and a deployment that
+   * configures none of them behaves exactly as it did before.
+   */
+  oauth: Object.freeze({
+    github: Object.freeze(resolveOauthCredentials('GITHUB')),
+    gitlab: Object.freeze(resolveOauthCredentials('GITLAB')),
+    mock: Object.freeze(resolveOauthCredentials('MOCK')),
   }),
 
   mfa: Object.freeze({

@@ -262,6 +262,103 @@ can be completed without an inbox.
 Returns **401** if the token is expired, already used, or was minted for a
 different purpose. Resetting invalidates every other outstanding action token.
 
+### Signing in with a provider
+
+An account may link a **github.com** and a **gitlab.com** account and sign in
+with either. Linking only: a provider identity nobody has linked is refused. It
+never creates an account, and it is never matched to one by the email address
+the provider reports.
+
+Both are configured entirely by environment variable, and a deployment that
+sets neither behaves exactly as it did before. The provider endpoints are
+compiled in as constants, so a self hosted GitLab or GitHub Enterprise Server
+is not supported.
+
+There is no cookie anywhere in this API, so the usual cookie bound nonce is not
+available. Two things replace it: a link callback is authenticated and the
+account that started the flow must be the one finishing it, and nothing here can
+be reached cross origin at all, since the callback is a JSON POST and the
+credential travels in a header rather than ambiently.
+
+#### `GET /auth/oauth/providers`
+
+No authentication. Lists only what this deployment configured.
+
+```json
+{ "data": { "providers": [{ "name": "github", "label": "GitHub" }] } }
+```
+
+An empty array is the ordinary answer, and it is what tells the interface to
+render nothing rather than a button that cannot work.
+
+#### `POST /auth/oauth/:provider/login/start`
+#### `POST /auth/oauth/:provider/link/start`
+
+Empty body. `link/start` requires a session; `login/start` does not.
+
+```json
+{ "data": { "authorize_url": "https://github.com/login/oauth/authorize?...", "expires_in": 600 } }
+```
+
+Send the browser there as a **full page navigation**. A popup will not work:
+the client sets `Cross-Origin-Opener-Policy: same-origin`. A provider that is
+not configured is **404**, not an error.
+
+The `redirect_uri` is a server side constant, `{CLIENT_URL}/oauth-callback`, and
+is never accepted from a request. PKCE is used where the provider supports it,
+which is both of them, with `S256`.
+
+#### `POST /auth/oauth/login/callback`
+#### `POST /auth/oauth/link/callback`
+
+```json
+{ "state": "...", "code": "..." }
+```
+
+The provider is **not** in this payload. It is read from the state, so a code
+minted by one provider can never be presented to another's token endpoint.
+
+`login/callback` returns the same body as `POST /auth/login` — including
+`mfa_required` when the account has a second factor, because a provider sign in
+passes the same gate a password sign in does. `link/callback` requires a session
+and returns **201** with the stored identity.
+
+Four refusals worth knowing, all **401** except the last:
+
+* a state that has already been redeemed;
+* a link state redeemed by a different account than started it;
+* a link state spent on the sign in callback, or the reverse;
+* an identity already linked to another account, which is **409**.
+
+#### `GET /auth/oauth/identities`
+
+```json
+{
+  "data": {
+    "identities": [
+      {
+        "id": "...",
+        "provider": "github",
+        "provider_username": "octocat",
+        "provider_email": "octo@example.com",
+        "linked_at": "2026-07-25T19:13:31.012Z",
+        "last_login_at": null
+      }
+    ]
+  }
+}
+```
+
+`provider_username` and `provider_email` are shown so a person recognises which
+account they linked. Neither is ever used to find a row: an identity is matched
+on the provider's immutable numeric id, because a username can be renamed and
+then claimed by somebody else.
+
+#### `DELETE /auth/oauth/:provider`
+
+Unlinks, **204**. Safe unconditionally, because every account here also has a
+password.
+
 ### Second factor
 
 An account may hold a TOTP second factor that any authenticator app can carry:

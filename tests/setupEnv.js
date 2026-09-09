@@ -24,3 +24,15 @@ process.env.BCRYPT_ROUNDS = '4';
 
 process.env.WORKER_POOL_SIZE = '1';
 process.env.UPLOAD_STORAGE_DIR = './tmp/test_storage';
+
+/*
+ * The offline provider, enabled the same way a real one would be.
+ *
+ * `github` and `gitlab` are deliberately left unconfigured, so the suite proves
+ * two things at once: that the whole provider round trip works through the real
+ * routes, and that an unconfigured provider is genuinely absent rather than
+ * merely untested. The mock reaches no network and is never registered when
+ * PROD is true.
+ */
+process.env.MOCK_OAUTH_CLIENT_ID = 'mock_client_id';
+process.env.MOCK_OAUTH_CLIENT_SECRET = 'mock_client_secret';
