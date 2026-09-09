@@ -14,4 +14,5 @@ approval.
 
 | Version | Change log | Summary |
 |---|---|---|
+| 0.25.0 | [`../../wiki/logs/0/25/0/CHANGELOG.md`](../../wiki/logs/0/25/0/CHANGELOG.md) | A TOTP second factor, github.com and gitlab.com sign in, and the upload containment guard made to actually run. |
 | 0.24.0 | [`../../wiki/logs/0/24/0/CHANGELOG.md`](../../wiki/logs/0/24/0/CHANGELOG.md) | Adoption of the shared agent instruction set, and the documentation restructure that came with it. |
