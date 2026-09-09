@@ -25,3 +25,4 @@ same commit. Writing memory needs no approval.
 | File | Scope — load when |
 |---|---|
 | [`../memory/tasks/agents-setup.md`](../memory/tasks/agents-setup.md) | You are working on the instruction system itself, or need to know how this repository adopted the shared set. |
+| [`../memory/tasks/auth-security-refinement.md`](../memory/tasks/auth-security-refinement.md) | You are working on alternative sign in, the second factor, account linking, the policy pages, or the upload containment fix. |
