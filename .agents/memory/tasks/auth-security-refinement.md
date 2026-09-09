@@ -132,3 +132,47 @@ rows in `wiki/information/requirements.md` with multi factor authentication remo
 Out of scope. Single sign on stays listed there until task 4 removes it.
 
 Server suite: 535 passing, 18 suites, up from 507. No existing test changed.
+
+### Task 4 — feat/oauth-identity
+
+Provider sign in for github.com and gitlab.com, link only. Registry at
+`src/infrastructure/oauth/providers/`, mirroring the AI registry: frozen, resolved through
+`hasOwnProperty`, every endpoint a constant inside its adapter. Two new tables,
+`oauth_states` and `account_identities`.
+
+Their `provider` and `mode` columns are `STRING` with validation rather than `ENUM`, for
+the same deployment reason the tables exist at all: `sync()` never alters an existing type,
+so an ENUM could never gain a value later. Adding a third provider would work on every
+fresh database and fail on the first insert against a real one.
+
+What replaces the cookie, since this API has none:
+
+* A link callback is authenticated, and `oauth_states.account_id` must equal
+  `req.account.id`. Without that, an attacker starts a flow with their own provider
+  account, walks a signed in victim through the callback, and their identity is bound to
+  the victim's account. There is a test that does exactly this.
+* A `LINK` state spent on the sign in callback, or the reverse, is refused. Both directions
+  are tested.
+* The state is consumed **before** the code is exchanged. Consuming afterwards would leave
+  it spendable again whenever an exchange failed, which is the code injection PKCE guards.
+
+Two provider details that would otherwise have cost a debugging session: GitHub answers a
+failed token exchange with **HTTP 200 and an error body**, so the adapter checks
+`payload.error` rather than the status the way the AI adapters do; and GitHub requires a
+`User-Agent`. PKCE is on for both — GitHub added S256 for OAuth apps in July 2025, so the
+earlier assumption that it did not support PKCE was out of date. The capability is still a
+per adapter flag rather than an assumption.
+
+Identity is matched on the provider's immutable numeric id and never on the username.
+A username is renameable and, once released, claimable by somebody else, so matching on
+one hands the account to whoever picks the name up next. Two tests cover it: a rename keeps
+the same account, and a stranger who took the old name does not get in.
+
+No provider access token is stored. It is read once during the callback and discarded.
+
+A `mock` adapter is registered outside production only, and `tests/setupEnv.js` configures
+it while leaving github and gitlab unconfigured. That keeps `npm test` network free on a
+clean clone and lets one suite prove both that the round trip works and that an
+unconfigured provider is genuinely absent.
+
+Server suite: 554 passing, 19 suites, up from 535.

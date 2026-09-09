@@ -18,6 +18,8 @@ const defineAiChatSession = require('./aiChatSession');
 const defineAccountMfa = require('./accountMfa');
 const defineAccountRecoveryCode = require('./accountRecoveryCode');
 const defineMfaChallenge = require('./mfaChallenge');
+const defineOauthState = require('./oauthState');
+const defineAccountIdentity = require('./accountIdentity');
 
 const Account = defineAccount(sequelize);
 const OrgMember = defineOrgMember(sequelize);
@@ -35,6 +37,8 @@ const AiChatSession = defineAiChatSession(sequelize);
 const AccountMfa = defineAccountMfa(sequelize);
 const AccountRecoveryCode = defineAccountRecoveryCode(sequelize);
 const MfaChallenge = defineMfaChallenge(sequelize);
+const OauthState = defineOauthState(sequelize);
+const AccountIdentity = defineAccountIdentity(sequelize);
 
 /*
  * Associations.
@@ -280,6 +284,31 @@ MfaChallenge.belongsTo(Account, {
   foreignKey: { name: 'accountId', field: 'account_id' },
 });
 
+// Account to the provider accounts that may sign it in. Many per account: one
+// GitHub and one GitLab is the ordinary case, and unlinking one leaves the
+// other alone.
+Account.hasMany(AccountIdentity, {
+  as: 'identities',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AccountIdentity.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
+// Account to its in flight provider redirects. Nullable on the account side,
+// because a sign in has no account until the identity resolves to one.
+Account.hasMany(OauthState, {
+  as: 'oauthStates',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+OauthState.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
 module.exports = {
   sequelize,
   Account,
@@ -298,4 +327,6 @@ module.exports = {
   AccountMfa,
   AccountRecoveryCode,
   MfaChallenge,
+  OauthState,
+  AccountIdentity,
 };
