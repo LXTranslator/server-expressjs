@@ -103,6 +103,33 @@ function resolveEncryptionPassphrase() {
 
 const storageRoot = path.resolve(readString('UPLOAD_STORAGE_DIR', './storage/uploads'));
 
+/**
+ * Reads the authenticator issuer label, refusing a value that would break the URI.
+ *
+ * A colon separates the two halves of an `otpauth://` label, so one inside the
+ * issuer splits the label in the wrong place and the authenticator shows a
+ * mangled name. Rejecting it at boot beats discovering it on somebody's phone.
+ *
+ * @returns {string} The issuer label.
+ * @throws {Error} When the configured value cannot be used in a label.
+ */
+function resolveIssuerName() {
+  const name = readString('AUTHENTICATION_NAME', 'LXTranslator');
+
+  if (name.includes(':')) {
+    throw new Error('AUTHENTICATION_NAME must not contain a colon; it separates the label halves.');
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(name)) {
+    throw new Error('AUTHENTICATION_NAME must not contain control characters.');
+  }
+  if (name.length > 40) {
+    throw new Error('AUTHENTICATION_NAME must be 40 characters or fewer.');
+  }
+
+  return name;
+}
+
 const config = Object.freeze({
   isProduction,
   isTest,
@@ -136,6 +163,17 @@ const config = Object.freeze({
     maxFailedLogins: readInteger('MAX_FAILED_LOGINS', 5, { min: 3, max: 20 }),
     lockoutMinutes: readInteger('LOCKOUT_MINUTES', 15, { min: 1, max: 1440 }),
     corsOrigins: readList('CORS_ORIGINS', ['http://localhost:5173', 'http://localhost:3000']),
+  }),
+
+  mfa: Object.freeze({
+    /**
+     * Label an authenticator app shows above the code.
+     *
+     * It is the issuer half of the `otpauth://` label, which is what somebody
+     * reads when they have six accounts in the app and need to know which one
+     * this is. A default is supplied so nothing has to be configured.
+     */
+    issuerName: resolveIssuerName(),
   }),
 
   rateLimit: Object.freeze({

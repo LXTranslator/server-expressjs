@@ -262,6 +262,115 @@ can be completed without an inbox.
 Returns **401** if the token is expired, already used, or was minted for a
 different purpose. Resetting invalidates every other outstanding action token.
 
+### Second factor
+
+An account may hold a TOTP second factor that any authenticator app can carry:
+SHA-1, six digits, a thirty second period and one step of drift either way,
+which is what Google Authenticator implements.
+
+Enrolling, confirming, regenerating and removing all take a single use
+`settings_token` from `POST /settings/confirm`, on the same footing as a
+password change. Turning a factor off is exactly as sensitive as turning it on,
+so a stolen session cannot quietly remove it.
+
+#### `GET /auth/mfa`
+
+```json
+{
+  "data": {
+    "enabled": true,
+    "enrolled": true,
+    "confirmed_at": "2026-07-25T19:13:31.012Z",
+    "recovery_codes_remaining": 9
+  }
+}
+```
+
+`enrolled` without `enabled` means setup was started and never confirmed. That
+state challenges nothing: a secret nobody has proved they hold must not be able
+to lock somebody out of their own account.
+
+#### `POST /auth/mfa/setup`
+
+```json
+{ "settings_token": "your_settings_token" }
+```
+
+Returns **201** with the base32 secret and an `otpauth://` URI for a QR code.
+**Both are returned exactly once.** Starting setup again replaces an
+unconfirmed secret rather than showing the old one.
+
+#### `POST /auth/mfa/enable`
+
+```json
+{ "settings_token": "your_settings_token", "code": "123456" }
+```
+
+Proves the authenticator holds the secret, then returns ten recovery codes,
+**once**. A recovery code cannot be used here: none exist yet, and the point is
+to prove the app works before it becomes the only way in.
+
+#### `POST /auth/mfa/recovery_codes`
+
+```json
+{ "settings_token": "your_settings_token" }
+```
+
+Replaces every code with a fresh set, never a top up. A partial regeneration
+would leave somebody holding two printed sheets with no way to tell which one
+still works.
+
+#### `POST /auth/mfa/disable`
+
+```json
+{ "settings_token": "your_settings_token" }
+```
+
+Returns **204**, and removes every recovery code with the factor. A `POST`
+rather than a `DELETE` because it carries a body, and a `DELETE` body is not
+reliably sent by every client.
+
+#### Signing in with a factor enabled
+
+`POST /auth/login` still takes the same payload, but a correct password no
+longer produces a session:
+
+```json
+{ "data": { "mfa_required": true, "challenge_token": "...", "expires_in": 600 } }
+```
+
+Still **200**: the credentials were correct, and a 401 is what a client treats
+as "this session is over", which would have it discard the challenge it was
+just handed. The account is **absent** from this response, because it carries
+the email address and nothing has been proved yet beyond the password.
+
+The challenge token is an opaque random string, not a signed token. Presented
+as `Authorization: Bearer` it is a **401**: it can complete a challenge and do
+nothing else.
+
+#### `POST /auth/login/mfa`
+
+```json
+{ "challenge_token": "...", "code": "123456" }
+```
+
+Returns the same body as a normal login. `code` takes either a generated code
+or a recovery code — the shapes cannot be confused, so somebody who has already
+lost their authenticator is not also asked which kind of code they are holding.
+
+Three properties worth knowing:
+
+* **A code is spent when it is accepted.** Drift keeps a code current for up to
+  ninety seconds, so one read over a shoulder would otherwise work twice.
+* **Wrong codes share the account's lockout budget** with wrong passwords. Five
+  failures of either kind lock the account, and locking it kills any
+  outstanding challenge.
+* **A wrong code does not consume the challenge**, so a typo is retryable. Five
+  attempts against one challenge exhausts it.
+
+A password reset does **not** clear the factor. Clearing it would make the
+second factor exactly as strong as the mailbox it exists to survive.
+
 ### `GET /auth/me`
 
 Returns the account behind the current session. Requires authentication.

@@ -7,6 +7,9 @@ const { authLimiter, availabilityLimiter } = require('../../middleware/rateLimit
 const { ForbiddenError } = require('../../core/errors');
 const controller = require('./auth.controller');
 const schemas = require('./auth.schemas');
+const mfaController = require('./mfa.controller');
+const mfaSchemas = require('./mfa.schemas');
+const mfaRoutes = require('./mfa.routes');
 
 const router = express.Router();
 
@@ -47,6 +50,22 @@ router.get(
 router.post('/register', authLimiter, validate(schemas.registerSchema), controller.register);
 
 router.post('/login', authLimiter, validate(schemas.loginSchema), controller.login);
+
+/*
+ * The second half of a sign in that answered a password but not yet a second
+ * factor. Unauthenticated, because the caller holds a challenge and not a
+ * session: the challenge is the credential, and it can do nothing else.
+ */
+router.post(
+  '/login/mfa',
+  authLimiter,
+  validate(mfaSchemas.challengeSchema),
+  mfaController.completeChallenge,
+);
+
+// Mounted here rather than in routes/index.js so that /auth stays one mount
+// point and requireSession above can be handed straight to it.
+router.use('/mfa', mfaRoutes(requireSession));
 
 router.post(
   '/password/forgot',

@@ -89,3 +89,46 @@ add a "Login succeeded" log line to a registration.
 Tasks 3 and 4 both depend on this: task 3 adds the second factor branch inside
 `completeSignIn`, and task 4's provider callback calls it rather than minting its own
 session.
+
+### Task 3 — feat/second-factor
+
+TOTP on `node:crypto` in `src/core/totp.js`, checked against all six RFC 6238 SHA-1
+vectors including the one past 32 bits, which is what catches a counter written as an
+`Int32`. Base32 matches the RFC 4648 vector. No dependency added.
+
+Three new tables rather than columns on `accounts`: `account_mfa`,
+`account_recovery_codes`, `mfa_challenges`. `sequelize.sync()` in production creates
+missing tables and neither adds a column nor extends an ENUM type, so a column would have
+worked on every fresh database and in every test and then not existed on a deployment.
+
+Two things were got right only because they were tested for:
+
+* **Replay.** One step of drift keeps a code current for ninety seconds, so acceptance is
+  recorded in `account_mfa.last_used_counter` and every acceptance must be strictly
+  greater. Written as a conditional UPDATE, not a read and a write, so two requests
+  carrying the same code cannot both win. The first test run failed three cases because
+  the helper confirmed enrolment with the current code and then tried to sign in with it;
+  that was the defence working, and the helper was what changed.
+* **Recovery code entropy.** The first generator mapped one random byte to one character
+  of a thirty character alphabet. Thirty does not divide 256, so the first sixteen
+  characters were measurably likelier, and sixteen characters carried 78 bits rather than
+  the 128 the bytes held. Replaced with `crypto.randomInt`, twenty characters, 98 bits.
+
+`completeSignIn` now returns a discriminated result. A correct password with a confirmed
+factor yields a challenge and no session, at 200 rather than 401 — a 401 is what a client
+treats as "signed out", and it would discard the challenge it was just handed. The
+account is absent from that response because `toPublicJson` carries the email address.
+
+The failure counters are deliberately **not** cleared on the challenge branch. Clearing
+them would hand somebody holding the password one counter reset per sign in, and with it
+unlimited guesses at the second factor.
+
+A password reset leaves the factor in place. Clearing it would make the second factor
+exactly as strong as the mailbox it exists to survive.
+
+Also here, because `change-propagation.md` puts them in the same commit: `AUTHENTICATION_NAME`
+in `wiki/environments/env.md`, the endpoints in `wiki/reference/api.md`, and the FR and NFR
+rows in `wiki/information/requirements.md` with multi factor authentication removed from
+Out of scope. Single sign on stays listed there until task 4 removes it.
+
+Server suite: 535 passing, 18 suites, up from 507. No existing test changed.

@@ -25,6 +25,11 @@ consumer.
 | FR-10 | A reset token becomes invalid immediately on first use. | Done |
 | FR-11 | Settings changes require a separate 10 minute single use token. | Done |
 | FR-12 | Users may change their `user_id`, email address and password. | Done |
+| FR-12a | An account may enrol a TOTP second factor, confirmed by proving a code before it takes effect. | Done |
+| FR-12b | A confirmed second factor turns login into two steps: correct credentials yield a single use challenge, never a session. | Done |
+| FR-12c | Confirming a factor issues ten single use recovery codes, shown once, replaceable as a set. | Done |
+| FR-12d | Enabling, disabling and regenerating all require a separate single use settings token. | Done |
+| FR-12e | A password reset leaves the second factor in place. | Done |
 
 ### Organizations
 
@@ -84,6 +89,9 @@ consumer.
 | NFR-8 | Repeated login failures lock the account temporarily. | Done |
 | NFR-8a | A session is revocable, and an account may hold many at once. | Done |
 | NFR-8b | The API is usable from a machine through a revocable token, without a password. | Done |
+| NFR-8c | A second factor code cannot be spent twice, even inside the drift window that still accepts it. | Done |
+| NFR-8d | Wrong second factor codes draw on the same lockout budget as wrong passwords. | Done |
+| NFR-8e | A login challenge is inert as a bearer credential and carries no account detail. | Done |
 | NFR-9 | Security headers set, including a restrictive content security policy. | Done |
 | NFR-10 | Cross origin access restricted to an explicit allowlist. | Done |
 | NFR-11 | Errors return generic messages; detail is logged server side only. | Done |
@@ -122,9 +130,6 @@ consumer.
 * Real time collaborative editing.
 * Formats other than JSON.
 * Single sign on.
-* Multi factor authentication. Account lockout and single use action tokens are
-  in place; a second factor is the natural next hardening step for a financial
-  deployment.
 
 ## Assumptions
 

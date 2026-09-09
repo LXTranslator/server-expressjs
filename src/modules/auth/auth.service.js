@@ -10,6 +10,7 @@ const { sendPasswordResetEmail } = require('../../infrastructure/email/mailer');
 const { ConflictError, UnauthorizedError } = require('../../core/errors');
 const { isReservedIdentifier } = require('../../core/reservedIdentifiers');
 const sessionService = require('./session.service');
+const mfaService = require('./mfa.service');
 const {
   issueAccessToken,
   issueActionToken,
@@ -172,14 +173,82 @@ async function clearFailedAttempts(account) {
  *
  * @param {object} account Account whose identity has already been proved.
  * @param {{userAgent?: string, name?: string}} [context] Recorded on the session.
- * @returns {Promise<{account: object, token: string, expiresIn: number}>}
+ * @returns {Promise<{mfaRequired: false, account: object, token: string, expiresIn: number}
+ *   |{mfaRequired: true, challengeToken: string, expiresIn: number}>}
  * @throws {UnauthorizedError} When the account is locked.
  */
 async function completeSignIn(account, context = {}) {
   assertNotLocked(account);
+
+  if (await mfaService.isEnabled(account.id)) {
+    // The failure counters are deliberately left alone here. Clearing them on
+    // a correct password would hand somebody who has the password an unlimited
+    // supply of fresh attempts at the second factor, one reset per sign in.
+    const { challengeToken, expiresIn } = await mfaService.issueChallenge(account);
+    logger.info('Second factor required.', { accountId: account.id });
+    return { mfaRequired: true, challengeToken, expiresIn };
+  }
+
   await clearFailedAttempts(account);
 
   logger.info('Login succeeded.', { accountId: account.id });
+
+  const { token, expiresIn } = await issueAccessToken(account, context);
+  return { mfaRequired: false, account, token, expiresIn };
+}
+
+/**
+ * Answers a login challenge and, if the code holds, starts the session.
+ *
+ * Either kind of code is accepted on the same field: a person reaching for a
+ * recovery code has already lost their authenticator and should not also have
+ * to tell the server which sort of code they are holding. The two shapes cannot
+ * be confused, so the service decides.
+ *
+ * @param {{challenge_token: string, code: string}} input Validated payload.
+ * @param {{userAgent?: string, name?: string}} [context] Recorded on the session.
+ * @returns {Promise<{account: object, token: string, expiresIn: number}>}
+ * @throws {UnauthorizedError} When the challenge or the code does not hold.
+ */
+async function completeMfaChallenge(input, context = {}) {
+  const challenge = await mfaService.loadChallenge(input.challenge_token);
+
+  const account = await Account.findByPk(challenge.accountId);
+  if (account === null) {
+    throw new UnauthorizedError('That sign in attempt is invalid or has expired.');
+  }
+
+  assertNotLocked(account);
+
+  const accepted = await mfaService.verifyAnyCode(account.id, input.code);
+
+  if (!accepted) {
+    await mfaService.registerChallengeAttempt(challenge);
+
+    // The same counter the password uses. A second factor with a budget of its
+    // own would give an attacker holding the password a fresh set of guesses.
+    await registerFailedAttempt(account);
+
+    await account.reload();
+    if (account.lockedUntil !== null) {
+      // A challenge minted just before the lock must not survive it.
+      await mfaService.revokeChallenges(account.id);
+    }
+
+    logger.warn('Second factor rejected.', { accountId: account.id });
+    throw new UnauthorizedError('That code is not correct.');
+  }
+
+  // Spending the challenge is the last thing that can fail, and it is
+  // conditional, so two requests racing one challenge yield one session.
+  const spent = await mfaService.consumeChallenge(challenge);
+  if (!spent) {
+    throw new UnauthorizedError('That sign in attempt is invalid or has expired.');
+  }
+
+  await clearFailedAttempts(account);
+
+  logger.info('Second factor accepted.', { accountId: account.id });
 
   const { token, expiresIn } = await issueAccessToken(account, context);
   return { account, token, expiresIn };
@@ -309,6 +378,7 @@ module.exports = {
   register,
   login,
   completeSignIn,
+  completeMfaChallenge,
   assertNotLocked,
   registerFailedAttempt,
   clearFailedAttempts,

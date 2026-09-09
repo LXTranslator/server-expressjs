@@ -15,6 +15,9 @@ const defineExportFormat = require('./exportFormat');
 const defineAccountApiKey = require('./accountApiKey');
 const defineAiChatLog = require('./aiChatLog');
 const defineAiChatSession = require('./aiChatSession');
+const defineAccountMfa = require('./accountMfa');
+const defineAccountRecoveryCode = require('./accountRecoveryCode');
+const defineMfaChallenge = require('./mfaChallenge');
 
 const Account = defineAccount(sequelize);
 const OrgMember = defineOrgMember(sequelize);
@@ -29,6 +32,9 @@ const ExportFormat = defineExportFormat(sequelize);
 const AccountApiKey = defineAccountApiKey(sequelize);
 const AiChatLog = defineAiChatLog(sequelize);
 const AiChatSession = defineAiChatSession(sequelize);
+const AccountMfa = defineAccountMfa(sequelize);
+const AccountRecoveryCode = defineAccountRecoveryCode(sequelize);
+const MfaChallenge = defineMfaChallenge(sequelize);
 
 /*
  * Associations.
@@ -240,6 +246,40 @@ AuthToken.belongsTo(Account, {
   foreignKey: { name: 'accountId', field: 'account_id' },
 });
 
+// Account to its second factor. At most one row, enforced by the unique index
+// on the column rather than by anything declared here.
+Account.hasOne(AccountMfa, {
+  as: 'mfa',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AccountMfa.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
+// Account to the codes that get somebody back in when the authenticator is gone.
+Account.hasMany(AccountRecoveryCode, {
+  as: 'recoveryCodes',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+AccountRecoveryCode.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
+// Account to sign ins waiting on a second factor.
+Account.hasMany(MfaChallenge, {
+  as: 'mfaChallenges',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+  onDelete: 'CASCADE',
+});
+MfaChallenge.belongsTo(Account, {
+  as: 'account',
+  foreignKey: { name: 'accountId', field: 'account_id' },
+});
+
 module.exports = {
   sequelize,
   Account,
@@ -255,4 +295,7 @@ module.exports = {
   AccountApiKey,
   AiChatLog,
   AiChatSession,
+  AccountMfa,
+  AccountRecoveryCode,
+  MfaChallenge,
 };
