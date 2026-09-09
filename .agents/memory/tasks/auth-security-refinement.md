@@ -69,3 +69,23 @@ written: the plan is stated before the work exists so a reviewer can check the w
 against the plan rather than infer the plan from a diff.
 
 Task 2 depends on nothing here beyond the ordering.
+
+### Task 2 — refactor/sign-in-gate
+
+Extracted `assertNotLocked`, `registerFailedAttempt`, `clearFailedAttempts` and
+`completeSignIn` from `login()` in `src/modules/auth/auth.service.js`, and exported all
+four. No behaviour change: `tests/auth.test.js`, `session`, `security` and `access` pass
+untouched, which is what makes this a refactor rather than a rewrite.
+
+The lockout check stays in `login()` *before* the password comparison, so a locked
+account is still told it is locked rather than spending an attempt on a correct password.
+`completeSignIn` re-checks it, because the provider sign in added in task 4 reaches the
+gate without passing through `login()` at all.
+
+`register()` deliberately still calls `issueAccessToken` directly. A brand new account
+cannot be locked and cannot hold a second factor, and routing it through the gate would
+add a "Login succeeded" log line to a registration.
+
+Tasks 3 and 4 both depend on this: task 3 adds the second factor branch inside
+`completeSignIn`, and task 4's provider callback calls it rather than minting its own
+session.

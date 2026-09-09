@@ -110,6 +110,82 @@ async function register(input, context = {}) {
 }
 
 /**
+ * Refuses a sign in while the account sits inside its lockout window.
+ *
+ * @param {object} account Account record.
+ * @returns {void}
+ * @throws {UnauthorizedError} When the account is locked.
+ */
+function assertNotLocked(account) {
+  if (account.lockedUntil !== null && account.lockedUntil > new Date()) {
+    throw new UnauthorizedError(
+      'This account is temporarily locked after too many failed attempts. Try again later.',
+    );
+  }
+}
+
+/**
+ * Records one failed credential attempt, locking the account at the ceiling.
+ *
+ * Every credential a sign in can fail on shares this counter. Giving a second
+ * factor its own budget would hand somebody who already holds the password a
+ * fresh set of guesses, which is the opposite of what the factor is for.
+ *
+ * @param {object} account Account record.
+ * @returns {Promise<void>}
+ */
+async function registerFailedAttempt(account) {
+  const attempts = account.failedLoginAttempts + 1;
+  const updates = { failedLoginAttempts: attempts };
+
+  if (attempts >= config.security.maxFailedLogins) {
+    updates.lockedUntil = new Date(Date.now() + config.security.lockoutMinutes * 60 * 1000);
+    updates.failedLoginAttempts = 0;
+    logger.warn('Account locked after repeated failures.', { accountId: account.id });
+  }
+
+  await account.update(updates);
+  logger.warn('Failed login attempt.', { accountId: account.id, attempts });
+}
+
+/**
+ * Clears the failure counters, but only when there is something to clear.
+ *
+ * @param {object} account Account record.
+ * @returns {Promise<void>}
+ */
+async function clearFailedAttempts(account) {
+  if (account.failedLoginAttempts !== 0 || account.lockedUntil !== null) {
+    await account.update({ failedLoginAttempts: 0, lockedUntil: null });
+  }
+}
+
+/**
+ * The one gate every sign in passes through, whatever proved the identity.
+ *
+ * Password and provider sign ins converge here rather than each calling
+ * `issueAccessToken` for themselves. That is deliberate and structural: the
+ * moment a second sign in path mints its own session, every rule this function
+ * enforces has to be remembered a second time, and the one that gets forgotten
+ * is the one that is not yet written. A caller has proved *who* somebody is;
+ * this decides whether that is enough to start a session.
+ *
+ * @param {object} account Account whose identity has already been proved.
+ * @param {{userAgent?: string, name?: string}} [context] Recorded on the session.
+ * @returns {Promise<{account: object, token: string, expiresIn: number}>}
+ * @throws {UnauthorizedError} When the account is locked.
+ */
+async function completeSignIn(account, context = {}) {
+  assertNotLocked(account);
+  await clearFailedAttempts(account);
+
+  logger.info('Login succeeded.', { accountId: account.id });
+
+  const { token, expiresIn } = await issueAccessToken(account, context);
+  return { account, token, expiresIn };
+}
+
+/**
  * Authenticates a set of credentials.
  *
  * @param {{identifier: string, password: string}} input Validated payload.
@@ -136,37 +212,18 @@ async function login(input, context = {}) {
     throw genericFailure;
   }
 
-  if (account.lockedUntil !== null && account.lockedUntil > new Date()) {
-    throw new UnauthorizedError(
-      'This account is temporarily locked after too many failed attempts. Try again later.',
-    );
-  }
+  // Checked before the comparison, so a locked account is told it is locked
+  // rather than spending one of its own attempts on a correct password.
+  assertNotLocked(account);
 
   const matches = await bcrypt.compare(input.password, account.passwordHash);
 
   if (!matches) {
-    const attempts = account.failedLoginAttempts + 1;
-    const updates = { failedLoginAttempts: attempts };
-
-    if (attempts >= config.security.maxFailedLogins) {
-      updates.lockedUntil = new Date(Date.now() + config.security.lockoutMinutes * 60 * 1000);
-      updates.failedLoginAttempts = 0;
-      logger.warn('Account locked after repeated failures.', { accountId: account.id });
-    }
-
-    await account.update(updates);
-    logger.warn('Failed login attempt.', { accountId: account.id, attempts });
+    await registerFailedAttempt(account);
     throw genericFailure;
   }
 
-  if (account.failedLoginAttempts !== 0 || account.lockedUntil !== null) {
-    await account.update({ failedLoginAttempts: 0, lockedUntil: null });
-  }
-
-  logger.info('Login succeeded.', { accountId: account.id });
-
-  const { token, expiresIn } = await issueAccessToken(account, context);
-  return { account, token, expiresIn };
+  return completeSignIn(account, context);
 }
 
 /**
@@ -247,4 +304,14 @@ async function resetPassword(input) {
   return { account };
 }
 
-module.exports = { checkAvailability, register, login, requestPasswordReset, resetPassword };
+module.exports = {
+  checkAvailability,
+  register,
+  login,
+  completeSignIn,
+  assertNotLocked,
+  registerFailedAttempt,
+  clearFailedAttempts,
+  requestPasswordReset,
+  resetPassword,
+};
