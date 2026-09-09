@@ -43,15 +43,17 @@ defences was dead code on the only path using it.
 | 3 | Second factor | TOTP core, enrolment, login challenge, recovery codes | server | `feat/second-factor` | |
 | 4 | OAuth identity | Provider registry, link and sign in flows | server | `feat/oauth-identity` | |
 | 5 | Upload containment | The verified defect, orphan cleanup, double extensions, multer limits | server | `fix/upload-containment` | |
-| 6 | Release 0.25.0 | Version, changelog, indexes, close this record | server | `chore/release` | |
-| 7 | Task record | The same record, for the client | client | `chore/auth-security-refinement-plan` | |
-| 8 | Policy pages | Two public pages and a footer column | client | `feat/policy-page` | |
-| 9 | Upload validation | Close the double extension gap client side | client | `fix/upload-validation` | |
-| 10 | Second factor | Challenge step at login, enrolment page, QR encoder | client | `feat/second-factor` | |
-| 11 | Account linking | Provider buttons, callback page, connections page | client | `feat/account-linking` | |
-| 12 | Release 0.17.0 | Version, changelog, indexes, close the record | client | `chore/release` | |
+| 6 | Dependencies | Every dependency to its latest version, and the audit to clean | server | `build/dependencies` | |
+| 7 | Release 0.25.0 | Version, changelog, indexes, close this record | server | `chore/release` | |
+| 8 | Task record | The same record, for the client | client | `chore/auth-security-refinement-plan` | |
+| 9 | Policy pages | Two public pages and a footer column | client | `feat/policy-page` | |
+| 10 | Upload validation | Close the double extension gap client side | client | `fix/upload-validation` | |
+| 11 | Second factor | Challenge step at login, enrolment page, QR encoder | client | `feat/second-factor` | |
+| 12 | Account linking | Provider buttons, callback page, connections page | client | `feat/account-linking` | |
+| 13 | Dependencies | Every dependency to its latest version, and the audit to clean | client | `build/dependencies` | |
+| 14 | Release 0.17.0 | Version, changelog, indexes, close the record | client | `chore/release` | |
 
-Task 1 branches from `master`; task `k` branches from task `k-1`. Tasks 7 to 12 are a
+Task 1 branches from `master`; task `k` branches from task `k-1`. Tasks 8 to 14 are a
 second chain in the client repository, ordered after this one rather than stacked on it,
 because branches cannot stack across repositories.
 
@@ -208,7 +210,7 @@ plainly, is that an upload called `en_us.v2.json` is now refused.
 
 Server suite: 560 passing, up from 554.
 
-### Task 13 — build/dependencies
+### Task 6 — build/dependencies
 
 Every dependency to its latest version, and `npm audit` now reports **0 vulnerabilities**
 where it previously reported five, four of them high.
@@ -249,3 +251,57 @@ Server suite: 560 passing across 19 suites, unchanged. Coverage runs. Audit clea
 `.agents/security/supply-chain.md` still documents the old override set and claims a clean
 audit at the old versions. It is an instruction file, so the correction is proposed rather
 than written; it joins the findings list.
+### Task 7 — chore/release
+
+Version 0.25.0, `wiki/logs/0/25/0/CHANGELOG.md`, the `logs-index.md` row, and
+`.agents/memory/state/repository-state.md` rewritten to describe the three sign in paths,
+the single gate they share, and the `sequelize.sync()` constraint that governs every future
+schema change here.
+
+`package-lock.json` also carried `"version": "0.21.0"`, three minor versions behind
+`package.json`. Corrected in both of its version fields.
+
+The `PR` column of the table above is still empty. Pull requests are not opened without
+asking, and nothing has been pushed yet — the numbers go in when the chain exists.
+
+Server chain complete: seven tasks, seven branches, 560 tests passing across 19 suites.
+
+## Not done, and why: the dependency audit fails
+
+`npm run audit:security` fails at 0.25.0 with **5 advisories, 4 of them high**:
+`multer`, `nodemailer`, `brace-expansion`, `js-yaml` and `qs`.
+
+**This is not caused by this work.** No dependency was added, and
+`git diff master..HEAD -- package-lock.json` is exactly two lines, both the stale version
+field. The tree is byte identical to `master`, so every one of these advisories was
+published against the existing tree since `.agents/security/supply-chain.md` last recorded
+"found 0 vulnerabilities". That claim in the policy is now stale.
+
+It is not a one line fix either: `npm audit fix --dry-run --package-lock-only` changes
+nothing, because the patched versions are outside the declared ranges — `multer ^2.2.0`
+and `nodemailer ^9.0.3` both need a major bump, which `supply-chain.md` treats as a trust
+decision requiring justification rather than something to apply silently.
+
+Four of the `multer` advisories land directly on the upload path task 5 hardened, and one
+of them — a file size limit bypass through an async `fileFilter` race — is a defence this
+repository relies on. Worth raising with the user before the chain merges, as its own
+task rather than folded into this one.
+
+## Discovery findings — awaiting the user's decision
+
+Per the discovery protocol these are proposed, not written. Four, all `local` to this
+repository:
+
+1. `.agents/security/authentication-failures.md` lines 71 to 75 still say multi factor
+   authentication is **not yet implemented**. It is. The section should be replaced with
+   the second factor rules, including the decision that a password reset does not clear
+   the factor.
+2. `.agents/security/ssrf.md` says the AI providers are "the only egress it performs".
+   github.com and gitlab.com make that untrue.
+3. A rule that does not exist yet and is the most valuable of the four: **a status, kind
+   or purpose column is `STRING` with validation, never `ENUM`**, because `sync()` cannot
+   extend an ENUM in production. The repository already follows this in
+   `accountApiKey.provider` without having written it down, and the reasoning was
+   rediscovered from scratch during this work.
+4. `.agents/security/secure-file-upload.md` describes seven layers. Layer 5 now differs
+   between an upload and a download name, and the reason it differs is worth stating.
