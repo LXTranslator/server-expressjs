@@ -176,3 +176,34 @@ clean clone and lets one suite prove both that the round trip works and that an
 unconfigured provider is genuinely absent.
 
 Server suite: 554 passing, 19 suites, up from 535.
+
+### Task 5 — fix/upload-containment
+
+**The defect.** `persistRawUpload` was called with `project.id`, a `DataTypes.INTEGER`, so
+`path.resolve(root, 7)` threw `TypeError: The "paths[1]" argument must be of type string`
+before the containment guard ever ran. The catch swallowed it by design, the suite runs at
+`LOG_LEVEL=silent`, and nothing asserted a file reached disk. The only filesystem write in
+the application had never executed, and the guard `security/path-traversal.md` calls one of
+two mandatory defences was dead code on the one path that used it.
+
+Fixed with `String(projectId)`, and the archived copy is now named after the `File` row's
+own UUID rather than a fresh random one. That makes the path derivable, which is what lets
+`deleteFile` remove the copy instead of leaving it behind forever — there is no
+`stored_path` column and there cannot be one, since `sync()` adds no column to an existing
+table. It required creating the row before writing the file, which is a small reorder.
+
+Confirmed the new tests catch the original defect: reverting `String()` fails four of the
+five. A write with no test that the bytes landed where they were meant to is a write that
+can quietly not happen.
+
+**Double extensions.** `sanitizeFilename` now uses `SAFE_UPLOAD_STEM_PATTERN`, which
+forbids a dot, separate from `SAFE_STEM_PATTERN` which `buildDownloadName` keeps. The
+distinction is load bearing: a download name legitimately produces a dotted stem, and
+`buildDownloadName('everything.json', '.zip')` is `everything.json.zip`, which
+`tests/chat.test.js` asserts. One shared pattern would break that feature. The cost, stated
+plainly, is that an upload called `en_us.v2.json` is now refused.
+
+**Also:** multer `parts` and `headerPairs` ceilings, previously only implied by `files` and
+`fields`.
+
+Server suite: 560 passing, up from 554.

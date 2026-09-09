@@ -1,7 +1,6 @@
 'use strict';
 
 const fs = require('node:fs/promises');
-const crypto = require('node:crypto');
 const config = require('../../config');
 const logger = require('../../core/logger');
 const {
@@ -91,22 +90,40 @@ function assertJsonObject(buffer) {
 }
 
 /**
- * Writes the verified upload to disk under a generated name.
+ * Resolves where a file's archived copy lives.
  *
- * The client's filename is never used to build the path. A fresh UUID is, and
- * the result is proven to sit inside the storage root before anything is
- * written.
+ * The name is the file's own identifier, a server generated UUID, rather than a
+ * fresh random one. That is what makes the path derivable later, which is what
+ * lets the copy be deleted with the row instead of accumulating forever. The
+ * client's filename still never reaches a path.
  *
- * @param {string} projectId Owning project.
+ * `String()` on the project id is not decoration. The column is an INTEGER, and
+ * `path.resolve` throws a TypeError on a number rather than coercing it — which
+ * is precisely what used to happen here, silently, inside a catch.
+ *
+ * @param {string|number} projectId Owning project.
+ * @param {string} fileId File identifier.
+ * @returns {{directory: string, storedPath: string}} Contained paths.
+ * @throws {BadRequestError} When either would escape the storage root.
+ */
+function resolveUploadPath(projectId, fileId) {
+  const directory = resolveWithinDirectory(config.upload.storageDir, String(projectId));
+  const storedPath = resolveWithinDirectory(directory, `${String(fileId)}.json`);
+  return { directory, storedPath };
+}
+
+/**
+ * Writes the verified upload to disk under the file's own identifier.
+ *
+ * @param {string|number} projectId Owning project.
+ * @param {string} fileId File identifier, which becomes the name.
  * @param {Buffer} buffer Verified bytes.
  * @returns {Promise<string|null>} Stored path, or null when storage failed.
  */
-async function persistRawUpload(projectId, buffer) {
+async function persistRawUpload(projectId, fileId, buffer) {
   try {
-    const directory = resolveWithinDirectory(config.upload.storageDir, projectId);
+    const { directory, storedPath } = resolveUploadPath(projectId, fileId);
     await fs.mkdir(directory, { recursive: true });
-
-    const storedPath = resolveWithinDirectory(directory, `${crypto.randomUUID()}.json`);
     await fs.writeFile(storedPath, buffer, { mode: 0o640 });
     return storedPath;
   } catch (error) {
@@ -114,6 +131,26 @@ async function persistRawUpload(projectId, buffer) {
     // already in the database, so a storage failure must not fail the upload.
     logger.error('Could not archive the uploaded file.', { projectId, message: error.message });
     return null;
+  }
+}
+
+/**
+ * Removes a file's archived copy, if it has one.
+ *
+ * Best effort, like the write. A copy that cannot be removed is worth a log
+ * line and nothing more: failing the delete would leave the row behind too,
+ * which is strictly worse than leaving one orphaned file on disk.
+ *
+ * @param {string|number} projectId Owning project.
+ * @param {string} fileId File identifier.
+ * @returns {Promise<void>}
+ */
+async function removeRawUpload(projectId, fileId) {
+  try {
+    const { storedPath } = resolveUploadPath(projectId, fileId);
+    await fs.rm(storedPath, { force: true });
+  } catch (error) {
+    logger.error('Could not remove the archived upload.', { projectId, fileId, message: error.message });
   }
 }
 
@@ -360,13 +397,6 @@ async function createUpload({
     throw new ConflictError('This project already has a file with that name.');
   }
 
-  // The archive holds the validated document rather than the exact bytes that
-  // arrived, which differ only by a byte order mark. Nothing reads it back, the
-  // master is rebuilt from the database, and this way an archived file is
-  // always parseable whichever route created it.
-  const buffer = Buffer.from(content, 'utf8');
-  await persistRawUpload(project.id, buffer);
-
   const record = await File.create({
     projectId: project.id,
     filename,
@@ -374,6 +404,16 @@ async function createUpload({
     targetLangCodes: normalizedTargets,
     status: 'PENDING',
   });
+
+  // The archive holds the validated document rather than the exact bytes that
+  // arrived, which differ only by a byte order mark. Nothing reads it back, the
+  // master is rebuilt from the database, and this way an archived file is
+  // always parseable whichever route created it.
+  //
+  // Written after the row rather than before it, so the copy can be named for
+  // the row and found again when the row is deleted.
+  const buffer = Buffer.from(content, 'utf8');
+  await persistRawUpload(project.id, record.id, buffer);
 
   logger.info('File created.', {
     fileId: record.id,
@@ -604,6 +644,11 @@ async function deleteFile(projectId, fileId) {
   if (deleted === 0) {
     throw new NotFoundError('That file does not exist on this project.');
   }
+
+  // The row is gone, so nothing can reach the archived copy any more. Removing
+  // it here is what stops the storage directory growing without bound.
+  await removeRawUpload(projectId, fileId);
+
   logger.info('File deleted.', { fileId, projectId });
 }
 
@@ -616,6 +661,8 @@ module.exports = {
   mergeKeys,
   buildMasterDocument,
   deleteFile,
+  resolveUploadPath,
+  removeRawUpload,
   assertJsonObject,
   assertLangCode,
   LANG_CODE_PATTERN,
