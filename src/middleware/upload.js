@@ -75,6 +75,13 @@ const multerUpload = multer({
     fields: 20,
     fieldNameSize: 100,
     fieldSize: 32 * 1024,
+    /*
+     * Bounded already by `files` and `fields` above, but stated rather than
+     * inferred: a ceiling that exists only as the sum of two other ceilings is
+     * one refactor away from not existing.
+     */
+    parts: 25,
+    headerPairs: 50,
   },
 });
 

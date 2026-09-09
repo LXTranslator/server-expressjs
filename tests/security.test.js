@@ -374,6 +374,121 @@ describe('upload endpoint hardening', () => {
       .attach('file', Buffer.from('{"a":"A"}'), 'en_us.json')
       .expect(401);
   });
+
+  it('rejects a name whose stem carries a second extension', async () => {
+    for (const name of ['evil.php.json', 'report.html.json']) {
+      const response = await upload(Buffer.from('{"a":"A"}'), name);
+      expect(response.status).toBe(400);
+    }
+  });
+});
+
+describe('archived uploads', () => {
+  /*
+   * These are the assertions that were missing.
+   *
+   * `persistRawUpload` was called with `project.id`, an INTEGER, so
+   * `path.resolve` threw a TypeError before the containment guard ever ran. The
+   * catch around it swallowed the failure by design, the suite runs at
+   * LOG_LEVEL=silent, and nothing checked that a file reached disk — so the only
+   * filesystem write in the application had never once executed, and the guard
+   * `security/path-traversal.md` calls one of two mandatory defences was dead
+   * code on the one path that used it.
+   *
+   * Anything writing to the filesystem needs a test that the bytes landed where
+   * they were supposed to, and nowhere else.
+   */
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const config = require('../src/config');
+  const fileService = require('../src/modules/files/file.service');
+
+  let app;
+  let token;
+  let project;
+
+  beforeAll(async () => {
+    app = sharedApp;
+    const session = await registerAccount(app);
+    token = session.token;
+    project = await createProject(app, token, session.account.user_id);
+  });
+
+  /**
+   * Uploads a document and waits for the row to exist.
+   *
+   * @param {string} filename Name to send.
+   * @returns {Promise<object>} The created file record.
+   */
+  async function uploadFile(filename) {
+    const response = await request(app)
+      .post(`/api/v1/projects/${project.id}/files`)
+      .set('Authorization', `Bearer ${token}`)
+      .field('target_langs', 'th_th')
+      .attach('file', Buffer.from('{"greeting":"Hello"}'), filename);
+
+    expect(response.status).toBe(202);
+    return response.body.data.file;
+  }
+
+  it('writes the archived copy inside the storage root', async () => {
+    const file = await uploadFile('archived.json');
+    const { storedPath, directory } = fileService.resolveUploadPath(project.id, file.id);
+
+    const root = path.resolve(config.upload.storageDir);
+    expect(directory.startsWith(root + path.sep)).toBe(true);
+    expect(storedPath.startsWith(root + path.sep)).toBe(true);
+
+    const written = await fs.readFile(storedPath, 'utf8');
+    expect(JSON.parse(written)).toEqual({ greeting: 'Hello' });
+  });
+
+  it('names the copy after the file id, never after the submitted name', async () => {
+    const file = await uploadFile('traversal_probe.json');
+    const { storedPath } = fileService.resolveUploadPath(project.id, file.id);
+
+    expect(path.basename(storedPath)).toBe(`${file.id}.json`);
+    expect(storedPath).not.toContain('traversal_probe');
+  });
+
+  it('keeps a traversal name out of the path entirely', async () => {
+    const response = await request(app)
+      .post(`/api/v1/projects/${project.id}/files`)
+      .set('Authorization', `Bearer ${token}`)
+      .field('target_langs', 'th_th')
+      .attach('file', Buffer.from('{"a":"A"}'), '../../../etc/passwd.json');
+
+    expect(response.status).toBe(202);
+
+    const file = response.body.data.file;
+    const { storedPath } = fileService.resolveUploadPath(project.id, file.id);
+    const root = path.resolve(config.upload.storageDir);
+
+    expect(storedPath.startsWith(root + path.sep)).toBe(true);
+    expect(storedPath).not.toContain('etc');
+    await expect(fs.access(storedPath)).resolves.toBeUndefined();
+  });
+
+  it('refuses to resolve a path outside the storage root', () => {
+    expect(() => fileService.resolveUploadPath('../../etc', 'passwd')).toThrow(
+      /outside the storage directory/i,
+    );
+  });
+
+  it('removes the archived copy when the file is deleted', async () => {
+    const file = await uploadFile('temporary.json');
+    const { storedPath } = fileService.resolveUploadPath(project.id, file.id);
+
+    await expect(fs.access(storedPath)).resolves.toBeUndefined();
+
+    await request(app)
+      .delete(`/api/v1/files/${file.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    // Without this the storage directory grows for the life of the deployment.
+    await expect(fs.access(storedPath)).rejects.toThrow();
+  });
 });
 
 describe('credential exposure', () => {

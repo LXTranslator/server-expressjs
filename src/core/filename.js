@@ -17,8 +17,28 @@ const { BadRequestError } = require('./errors');
  *     {@link resolveWithinDirectory} enforces containment as a second layer.
  */
 
-/** Characters permitted in a stored filename, after the extension is split off. */
+/** Characters permitted in a download name, after the extension is split off. */
 const SAFE_STEM_PATTERN = /^[A-Za-z0-9._ -]+$/;
+
+/**
+ * Characters permitted in an *uploaded* filename's stem. Note: no dot.
+ *
+ * A separate, stricter pattern, and the difference is the point. An upload is
+ * named by whoever sends it, so `report.html.json` and `payload.php.json` both
+ * pass an extension allowlist that only looks at the last extension. Neither is
+ * dangerous today — a stored name never becomes a path and never reaches a
+ * Content-Disposition header — but that is an invariant holding somewhere else,
+ * and the day anybody serves a stored name it stops holding.
+ *
+ * A download name keeps the looser pattern because it legitimately produces a
+ * dotted stem: `buildDownloadName('everything.json', '.zip')` is
+ * `everything.json.zip`, which the assistant relies on. Sharing one pattern
+ * between the two would break that.
+ *
+ * The cost is real and worth stating: an upload called `en_us.v2.json` is now
+ * refused.
+ */
+const SAFE_UPLOAD_STEM_PATTERN = /^[A-Za-z0-9_ -]+$/;
 
 /**
  * Longest name a download may be given, before its extension.
@@ -92,9 +112,9 @@ function sanitizeFilename(rawName, rules) {
     throw new BadRequestError('The filename contains an illegal character.');
   }
 
-  if (!SAFE_STEM_PATTERN.test(stem)) {
+  if (!SAFE_UPLOAD_STEM_PATTERN.test(stem)) {
     throw new BadRequestError(
-      'The filename may contain only letters, digits, spaces, dots, underscores and hyphens.',
+      'The filename may contain only letters, digits, spaces, underscores and hyphens before its extension.',
     );
   }
 
@@ -208,6 +228,7 @@ module.exports = {
   sanitizeFilename,
   buildDownloadName,
   resolveWithinDirectory,
+  SAFE_UPLOAD_STEM_PATTERN,
   SAFE_STEM_PATTERN,
   RESERVED_NAMES,
   MAX_DOWNLOAD_STEM_LENGTH,

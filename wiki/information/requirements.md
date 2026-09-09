@@ -86,7 +86,9 @@ consumer.
 | NFR-1 | Passwords stored as bcrypt digests. | Done |
 | NFR-2 | Provider keys encrypted with AES 256 GCM. | Done |
 | NFR-3 | Uploads validated by extension, media type, size and sanitised filename. | Done |
-| NFR-4 | Path traversal prevented; stored paths proven to sit inside the storage root. | Done |
+| NFR-4 | Path traversal prevented; stored paths proven to sit inside the storage root, with a test that exercises a real write. | Done |
+| NFR-4a | An uploaded filename may not carry a second extension in its stem. | Done |
+| NFR-4b | An archived upload is removed with its file, so storage does not grow without bound. | Done |
 | NFR-5 | Every object access resolved through its owning namespace. | Done |
 | NFR-6 | Payloads validated against strict schemas that drop unknown fields. | Done |
 | NFR-7 | Rate limiting tiered by endpoint sensitivity. | Done |
