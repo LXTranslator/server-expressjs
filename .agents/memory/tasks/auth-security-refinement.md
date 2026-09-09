@@ -207,3 +207,45 @@ plainly, is that an upload called `en_us.v2.json` is now refused.
 `fields`.
 
 Server suite: 560 passing, up from 554.
+
+### Task 13 — build/dependencies
+
+Every dependency to its latest version, and `npm audit` now reports **0 vulnerabilities**
+where it previously reported five, four of them high.
+
+| Package | From | To |
+|---|---|---|
+| `multer` | 2.2.0 | 2.3.0 |
+| `nodemailer` | 9.0.3 | 10.0.1 |
+| `zod` | 4.4.3 | 4.5.4 |
+| `jest` | 30.4.2 | 30.5.1 |
+| `pg` | 8.22.0 | 8.23.0 |
+| `express-rate-limit` | 8.6.0 | 8.7.0 |
+
+Overrides: `brace-expansion` raised to `^5.0.9` (the previous `^5.0.8` ceiling was itself
+the vulnerable version), and two added — `qs` at `^6.16.0`, pinned by express and the only
+one of these that reaches production, and `js-yaml` at `^5.4.1`.
+
+**A correction to what was reported at task 6.** I said `multer` needed a major bump.
+It did not: `2.3.0` is a minor and clears all four of its advisories. I had drawn that
+from `npm audit fix --dry-run --package-lock-only` reporting nothing to change, without
+checking `npm outdated`, which showed the real answer immediately.
+
+**The js-yaml risk did not materialise.** Its only consumer is an unmaintained istanbul
+package written against the 3.x API, so the override to 5.x could have broken coverage.
+`npm run test:coverage` runs clean, so the override stays.
+
+**nodemailer 10 is verified by running it, not by reading about it.** No test exercises it
+— the suite uses the console transport — so it was checked directly: `createTransport`
+with the exact `{host, port, secure, auth}` shape `mailer.js` passes still returns a
+transport with a `sendMail` function; a real send through `jsonTransport` with the exact
+`{from, to, subject, text}` signature delivers with every field intact; and driving
+`mailer.js` itself at `MAIL_TRANSPORT=smtp` against a closed port fails with
+`ECONNREFUSED` rather than a `TypeError`, which is what proves the API surface is whole
+rather than merely absent.
+
+Server suite: 560 passing across 19 suites, unchanged. Coverage runs. Audit clean.
+
+`.agents/security/supply-chain.md` still documents the old override set and claims a clean
+audit at the old versions. It is an instruction file, so the correction is proposed rather
+than written; it joins the findings list.
