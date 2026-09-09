@@ -38,20 +38,20 @@ defences was dead code on the only path using it.
 
 | # | Title | Scope | Repository | Branch | PR |
 |---|---|---|---|---|---|
-| 1 | Task record | This file and its index row | server | `chore/auth-security-refinement-plan` | |
-| 2 | Single sign-in gate | Extract the one function both sign in paths pass through | server | `refactor/sign-in-gate` | |
-| 3 | Second factor | TOTP core, enrolment, login challenge, recovery codes | server | `feat/second-factor` | |
-| 4 | OAuth identity | Provider registry, link and sign in flows | server | `feat/oauth-identity` | |
-| 5 | Upload containment | The verified defect, orphan cleanup, double extensions, multer limits | server | `fix/upload-containment` | |
-| 6 | Dependencies | Every dependency to its latest version, and the audit to clean | server | `build/dependencies` | |
-| 7 | Release 0.25.0 | Version, changelog, indexes, close this record | server | `chore/release` | |
-| 8 | Task record | The same record, for the client | client | `chore/auth-security-refinement-plan` | |
-| 9 | Policy pages | Two public pages and a footer column | client | `feat/policy-page` | |
-| 10 | Upload validation | Close the double extension gap client side | client | `fix/upload-validation` | |
-| 11 | Second factor | Challenge step at login, enrolment page, QR encoder | client | `feat/second-factor` | |
-| 12 | Account linking | Provider buttons, callback page, connections page | client | `feat/account-linking` | |
-| 13 | Dependencies | Every dependency to its latest version, and the audit to clean | client | `build/dependencies` | |
-| 14 | Release 0.17.0 | Version, changelog, indexes, close the record | client | `chore/release` | |
+| 1 | Task record | This file and its index row | server | `chore/auth-security-refinement-plan` | #27 |
+| 2 | Single sign-in gate | Extract the one function both sign in paths pass through | server | `refactor/sign-in-gate` | #28 |
+| 3 | Second factor | TOTP core, enrolment, login challenge, recovery codes | server | `feat/second-factor` | #29 |
+| 4 | OAuth identity | Provider registry, link and sign in flows | server | `feat/oauth-identity` | #30 |
+| 5 | Upload containment | The verified defect, orphan cleanup, double extensions, multer limits | server | `fix/upload-containment` | #31 |
+| 6 | Dependencies | Every dependency to its latest version, and the audit to clean | server | `build/dependencies` | #32 |
+| 7 | Release 0.25.0 | Version, changelog, indexes, close this record | server | `chore/release` | #33 |
+| 8 | Task record | The same record, for the client | client | `chore/auth-security-refinement-plan` | LXTranslator/client-reactjs#25 |
+| 9 | Policy pages | Two public pages and a footer column | client | `feat/policy-page` | LXTranslator/client-reactjs#26 |
+| 10 | Upload validation | Close the double extension gap client side | client | `fix/upload-validation` | LXTranslator/client-reactjs#27 |
+| 11 | Second factor | Challenge step at login, enrolment page, QR encoder | client | `feat/second-factor` | LXTranslator/client-reactjs#28 |
+| 12 | Account linking | Provider buttons, callback page, connections page | client | `feat/account-linking` | LXTranslator/client-reactjs#29 |
+| 13 | Dependencies | Every dependency to its latest version, and the audit to clean | client | `build/dependencies` | LXTranslator/client-reactjs#30 |
+| 14 | Release 0.17.0 | Version, changelog, indexes, close the record | client | `chore/release` | LXTranslator/client-reactjs#31 |
 
 Task 1 branches from `master`; task `k` branches from task `k-1`. Tasks 8 to 14 are a
 second chain in the client repository, ordered after this one rather than stacked on it,
@@ -261,8 +261,9 @@ schema change here.
 `package-lock.json` also carried `"version": "0.21.0"`, three minor versions behind
 `package.json`. Corrected in both of its version fields.
 
-The `PR` column of the table above is still empty. Pull requests are not opened without
-asking, and nothing has been pushed yet — the numbers go in when the chain exists.
+The `PR` column of the table above is filled. Fourteen pull requests are open, in two
+ordered chains, and **none is merged**: #27 is the index of this repository's chain and
+`LXTranslator/client-reactjs`#25 is the index of the other.
 
 Server chain complete: seven tasks, seven branches, 560 tests passing across 19 suites.
 
