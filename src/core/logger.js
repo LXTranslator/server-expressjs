@@ -24,6 +24,11 @@ const REDACTED_FIELDS = [
   'passphrase',
   'credential',
   'otp',
+  // `code_verifier` and `recovery_code` match nothing above. A bare `code`
+  // would be far too broad here: it would redact every language code, status
+  // code and error code the logs exist to show.
+  'verifier',
+  'recoverycode',
 ];
 
 const REDACTION_PLACEHOLDER = '[redacted]';

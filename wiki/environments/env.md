@@ -98,6 +98,9 @@ AGENTS_CHAT_EMBED_BATCH=50
 WORKER_POOL_SIZE=2
 WORKER_TASK_TIMEOUT_MS=300000
 
+# The second factor. The name is what an authenticator app shows above the code.
+AUTHENTICATION_NAME=LXTranslator
+
 # Mail. The console transport logs the message instead of sending it.
 MAIL_TRANSPORT=console
 MAIL_FROM=LXTranslator <no_reply@lxtranslator.local>
@@ -221,6 +224,7 @@ required for a development or test run.
 | `AGENTS_CHAT_LOG_BUFFER` | no | `500` | Chat logs held in memory while the database is unavailable. At the ceiling the oldest is dropped and logged. |
 | `AGENTS_CHAT_LOG_RETRY_MS` | no | `5000` | Delay before retrying a failed chat log write. |
 | `AGENTS_CHAT_EMBED_BATCH` | no | `50` | Rows one embedding backfill request may process. |
+| `AUTHENTICATION_NAME` | no | `LXTranslator` | Issuer label an authenticator app shows above the code, so somebody with several accounts in the app can tell which one this is. Refused at boot if it contains a colon, which separates the two halves of the `otpauth://` label, or a control character, or runs past 40 characters. |
 | `WORKER_POOL_SIZE` | no | `2` | Translation worker threads. |
 | `WORKER_TASK_TIMEOUT_MS` | no | `300000` | Maximum duration of one job. |
 | `MAIL_TRANSPORT` | no | `console` outside production | `console` or `smtp`. |

@@ -180,6 +180,7 @@ async function updateProfile(account, input) {
 
 module.exports = {
   issueSettingsToken,
+  redeemSettingsToken,
   updateUserId,
   updateEmail,
   updatePassword,

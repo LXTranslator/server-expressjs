@@ -7,6 +7,7 @@ const { connectDatabase, syncDatabase, closeDatabase } = require('./infrastructu
 const { translationPool } = require('./workers/pool');
 const usageService = require('./modules/usage/usage.service');
 const { purgeExpiredTokens } = require('./modules/auth/token.service');
+const { purgeExpiredChallenges } = require('./modules/auth/mfa.service');
 
 // Loading the model registry applies every association before the first query.
 require('./infrastructure/database/models');
@@ -54,6 +55,12 @@ async function start() {
   const purgeTimer = setInterval(() => {
     purgeExpiredTokens().catch((error) =>
       logger.error('Token purge failed.', { message: error.message }),
+    );
+    // Expired sign in challenges ride the same timer rather than starting a
+    // second one. They are short lived and small, but an abandoned sign in
+    // leaves a row behind every time.
+    purgeExpiredChallenges().catch((error) =>
+      logger.error('Challenge purge failed.', { message: error.message }),
     );
   }, TOKEN_PURGE_INTERVAL_MS);
   purgeTimer.unref();

@@ -65,19 +65,37 @@ const register = asyncHandler(async (req, res) => {
 
 /**
  * POST /auth/login
- * Exchanges credentials for a session token.
+ * Exchanges credentials for a session token, or for a second factor challenge.
  */
 const login = asyncHandler(async (req, res) => {
-  const { account, token, expiresIn } = await authService.login(
-    req.body,
-    clientContext(req),
-  );
+  const result = await authService.login(req.body, clientContext(req));
+
+  if (result.mfaRequired) {
+    /*
+     * 200 rather than 401. The credentials were correct, and a 401 is what
+     * every client treats as "this session is over" — answering one here would
+     * have the client discard the challenge it was just handed.
+     *
+     * The account is deliberately absent. `toPublicJson` carries the email
+     * address, and returning it now would hand that address to anybody holding
+     * the password, before the second factor has proved anything.
+     */
+    res.json({
+      data: {
+        mfa_required: true,
+        challenge_token: result.challengeToken,
+        expires_in: result.expiresIn,
+      },
+    });
+    return;
+  }
+
   res.json({
     data: {
-      account: account.toPublicJson(),
-      access_token: token,
+      account: result.account.toPublicJson(),
+      access_token: result.token,
       token_type: 'Bearer',
-      expires_in: expiresIn,
+      expires_in: result.expiresIn,
     },
   });
 });
