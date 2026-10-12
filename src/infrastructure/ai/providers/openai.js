@@ -1,14 +1,8 @@
 'use strict';
 
-const config = require('../../../config');
-const { buildSystemPrompt, buildUserPrompt, parseTranslationReply } = require('../prompt');
+const { buildSystemPrompt, buildUserPrompt } = require('../prompt');
+const { postJson, readTranslations } = require('../vendorRequest');
 const { runChatCompletion, runEmbedding } = require('./openaiChat');
-const {
-  ProviderError,
-  PROVIDER_ERROR_KINDS,
-  kindFromStatus,
-  kindFromTransportError,
-} = require('../providerError');
 
 /**
  * OpenAI chat completions adapter.
@@ -23,6 +17,21 @@ const ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 /** Embeddings live on their own path. Also a constant, for the same reason. */
 const EMBEDDING_ENDPOINT = 'https://api.openai.com/v1/embeddings';
+
+/** How this adapter is named on an error. */
+const VENDOR = Object.freeze({ label: 'OpenAI', provider: 'openai' });
+
+/**
+ * Unwraps the object `response_format` requires, so the array contract can be
+ * validated on what is inside it.
+ *
+ * @param {string} content Raw assistant content.
+ * @returns {string} The translations array as text.
+ */
+function unwrapTranslations(content) {
+  const parsed = JSON.parse(content);
+  return JSON.stringify(Array.isArray(parsed) ? parsed : parsed?.translations);
+}
 
 module.exports = {
   name: 'openai',
@@ -51,76 +60,24 @@ module.exports = {
    * @throws {ProviderError} Categorised so the fallback chain can act on it.
    */
   async translateBatch({ apiKey, model, sourceLang, targetLang, texts }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.ai.requestTimeoutMs);
+    const payload = await postJson({
+      ...VENDOR,
+      endpoint: ENDPOINT,
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: {
+        model,
+        messages: [
+          { role: 'system', content: buildSystemPrompt(sourceLang, targetLang) },
+          { role: 'user', content: buildUserPrompt(texts) },
+        ],
+        response_format: { type: 'json_object' },
+      },
+    });
 
-    let response;
-    try {
-      response = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: {
-          // The credential is only ever placed in a header, never in a URL or
-          // a log line.
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: buildSystemPrompt(sourceLang, targetLang) },
-            { role: 'user', content: buildUserPrompt(texts) },
-          ],
-          response_format: { type: 'json_object' },
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw new ProviderError(
-        kindFromTransportError(error),
-        'The OpenAI request could not be completed.',
-        { provider: 'openai', cause: error },
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!response.ok) {
-      // The vendor body is read for the operator log but never returned to the
-      // client, since it can echo request content back.
-      const detail = await response.text().catch(() => '');
-      throw new ProviderError(
-        kindFromStatus(response.status),
-        `OpenAI responded with status ${response.status}.`,
-        { status: response.status, provider: 'openai', cause: new Error(detail.slice(0, 300)) },
-      );
-    }
-
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        'OpenAI returned a body that was not valid JSON.',
-        { provider: 'openai', cause: error },
-      );
-    }
-
-    const content = payload?.choices?.[0]?.message?.content;
-
-    try {
-      // The wrapper object is required by response_format; unwrap it before
-      // validating the array contract.
-      const parsed = JSON.parse(content);
-      const items = Array.isArray(parsed) ? parsed : parsed?.translations;
-      return parseTranslationReply(JSON.stringify(items), texts.length);
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        `OpenAI returned an unusable reply: ${error.message}`,
-        { provider: 'openai', cause: error },
-      );
-    }
+    return readTranslations(payload?.choices?.[0]?.message?.content, texts.length, {
+      ...VENDOR,
+      unwrap: unwrapTranslations,
+    });
   },
 
   /**

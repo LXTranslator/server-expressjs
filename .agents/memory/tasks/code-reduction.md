@@ -83,3 +83,28 @@ which is a behaviour change, so the order was kept.
 refusal branch: coverage reports both branches of `requireAdmin.js`.
 
 Server suite: 560 passing across 19 suites, unchanged.
+
+### Task 3 — refactor/provider-request
+
+`src/infrastructure/ai/vendorRequest.js` is now the one place an AI vendor is called
+over the network. `postJson` owns the deadline, the transport, status and JSON parse
+failures and the rule that a vendor body reaches only `cause`; `assertNoUpstreamError`
+owns the error OpenRouter reports inside a 200 body; `readTranslations` owns the
+"unusable reply" wrapping around `parseTranslationReply`. The OpenAI, OpenRouter and
+Anthropic adapters and `openaiChat.js` call those instead of carrying six copies.
+
+Two things were kept exactly as they were, because something could read them:
+
+* The `provider` recorded on an error is still the lowercase adapter name on a
+  translation call and the display label on a chat or embedding call. That
+  inconsistency predates this work; changing it is a behaviour change, so it is left
+  for whoever decides it matters.
+* The transport message still says "embedding request" for an embedding call.
+
+The tests came first, in their own commit: forty cases in `tests/provider.test.js`
+pin the endpoint, credential header, transport, deadline, status and malformed body
+handling of all eight network calls, written and passing against the old adapters.
+A throwaway script also compared the old and new adapters on 45 request and reply
+shapes, headers and bodies included, with no difference.
+
+Server suite: 600 passing across 19 suites, up from 560 by the forty new cases.
