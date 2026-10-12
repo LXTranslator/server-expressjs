@@ -45,14 +45,14 @@ the wording around them differs:
 
 | # | Title | Scope | Repository | Branch | PR |
 |---|---|---|---|---|---|
-| 1 | Task record | This file and its index row | server | `chore/code-reduction-plan` | |
-| 2 | One admin guard | One assertion and one middleware for the ORG ADMIN check | server | `refactor/admin-guard` | |
-| 3 | One vendor request helper | One deadline, transport, status and JSON handler for every AI adapter | server | `refactor/provider-request` | |
-| 4 | Chat tools split | Tool definitions by area under `tools/`, shared helpers, one issue formatter | server | `refactor/chat-tools` | |
-| 5 | Shared model columns | UUID key, account reference and timestamp builders | server | `refactor/model-columns` | |
-| 6 | Shared sign in response | One sender for the password and provider sign in result | server | `refactor/sign-in-response` | |
-| 7 | Dependency advisories | Lockfile only update clearing the audit | server | `build/dependencies` | |
-| 8 | Release | Version, changelog, indexes, close this record | server | `release/{version}` | |
+| 1 | Task record | This file and its index row | server | `chore/code-reduction-plan` | #34 |
+| 2 | One admin guard | One assertion and one middleware for the ORG ADMIN check | server | `refactor/admin-guard` | #35 |
+| 3 | One vendor request helper | One deadline, transport, status and JSON handler for every AI adapter | server | `refactor/provider-request` | #36 |
+| 4 | Chat tools split | Tool definitions by area under `tools/`, shared helpers, one issue formatter | server | `refactor/chat-tools` | #37 |
+| 5 | Shared model columns | UUID key, account reference and timestamp builders | server | `refactor/model-columns` | #38 |
+| 6 | Shared sign in response | One sender for the password and provider sign in result | server | `refactor/sign-in-response` | #39 |
+| 7 | Dependency advisories | Lockfile only update clearing the audit | server | `build/dependencies` | #40 |
+| 8 | Release | Version, changelog, indexes, close this record | server | `release/0.25.1` | #41 |
 
 Task 1 branches from `master`; task `k` branches from task `k-1`. Tasks 2 and 4 both
 touch `chat.tools.js`, which is why the guard lands first and the split builds on it.
@@ -253,7 +253,8 @@ the tool arguments, the model columns and the session response each have one pla
 change now.
 
 Server chain complete: eight tasks, eight branches, 600 tests passing across 19 suites,
-`npm audit` clean. **None is merged**; merging is left to the owner.
+`npm audit` clean. The `PR` column above is filled: #34 to #41, merged in that order,
+with #34 carrying the whole chain. **None is merged**; merging is left to the owner.
 
 ## Discovery findings, awaiting the owner's decision
 
