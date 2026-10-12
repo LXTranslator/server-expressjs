@@ -108,3 +108,56 @@ A throwaway script also compared the old and new adapters on 45 request and repl
 shapes, headers and bodies included, with no difference.
 
 Server suite: 600 passing across 19 suites, up from 560 by the forty new cases.
+
+### Task 4 — refactor/chat-tools
+
+`src/modules/chat/chat.tools.js` was 1,849 lines holding eighteen tool definitions,
+their helpers and the dispatcher. It is now 146 lines: the security notes, the ordered
+tool list and the dispatcher. The definitions moved by area into
+`src/modules/chat/tools/`:
+
+| File | Holds |
+|---|---|
+| `shared.js` | Result shapes, argument pieces, ceilings, access resolution and the helpers below |
+| `conversation.js` | `switch_namespace`, `find_chat`, `stop` |
+| `projects.js` | `list_projects`, `create_project`, the description pair, `list_platforms`, `update_project_ai` |
+| `languages.js` | `check_project_languages`, `add_languages` |
+| `files.js` | `upload_file`, `list_files`, `create_file`, `add_keys`, `export_file` |
+| `exportFormats.js` | `list_export_formats`, `create_export_format` |
+
+What was repeated and is now written once:
+
+* **Every argument was declared twice**, as the JSON Schema the model is shown and as
+  the zod schema that validates it, and nothing kept the two in step.
+  `defineArguments` takes one `[zod, JSON Schema]` pair per field and derives both,
+  with a field required exactly when its zod schema is not optional.
+* **The `AppError` to refusal conversion** was a try and catch in eleven places.
+  `attempt(step, body)` returns `{ value, failure }` and rethrows anything the
+  application did not raise, exactly as each copy did.
+* **Resolve, then require ADMIN, then skip** was two steps everywhere a tool changes
+  something. `resolveProject` and `resolveFile` take `{ admin: true }`.
+* The project and file summaries, the one project argument tools, the no argument
+  tools, the project target collection shared by `update_project_ai` and
+  `add_languages`, the key count ceiling shared by `create_file` and `add_keys`, the
+  format preview and the platform catalogue on a refusal.
+
+The list order in `chat.tools.js` is the order before the split, because it is the
+order the model is shown. `listToolDefinitions()` was compared before and after as
+serialised JSON and is byte identical.
+
+By code lines, excluding comments and blank lines, the module went from 1,353 to
+1,366. The deduplication removed about as much as six files of imports cost. This
+task is about structure and about the two argument declarations that could drift;
+the line count is roughly flat.
+
+Planned and dropped: sharing the zod issue formatting between `validate.js` and the
+dispatcher. It is four lines in each place, and a shared helper with its JSDoc would
+have added more than it removed. `chat.tools.js` cannot import it from the middleware
+layer either, since a module may not call the layer above it.
+
+`.agents/security/excessive-agency.md` still says the tools are declared in
+`chat.tools.js`. That stays true: the list is there, and a name outside it resolves
+to nothing.
+
+Server suite: 600 passing across 19 suites, unchanged. `tests/chat.test.js` covers
+the tool files at 96.9 percent of lines.
