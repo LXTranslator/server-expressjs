@@ -77,6 +77,23 @@ function assertRole(role, required) {
 }
 
 /**
+ * Asserts the caller may change things in a namespace.
+ *
+ * Inside an organization that takes at least ADMIN. A personal namespace has a
+ * single owner, so the check passes there without asking for a role.
+ *
+ * @param {object} namespace Resolved namespace account.
+ * @param {string} role Role the caller holds in it.
+ * @returns {void}
+ * @throws {ForbiddenError} When an organization member is below ADMIN.
+ */
+function assertAdmin(namespace, role) {
+  if (namespace.type === 'ORG') {
+    assertRole(role, 'ADMIN');
+  }
+}
+
+/**
  * Reads a project identifier from a request path.
  *
  * The column is an integer, so a value that is not one can never match a row.
@@ -176,5 +193,6 @@ module.exports = {
   resolveFileAccess,
   listAccessibleNamespaces,
   assertRole,
+  assertAdmin,
   parseProjectId,
 };

@@ -64,3 +64,22 @@ Created this record and its row in `.agents/index/memory-index.md`. Nothing else
 written, so the plan can be read before any diff exists.
 
 Task 2 depends on nothing here beyond the ordering.
+
+### Task 2 — refactor/admin-guard
+
+`assertAdmin(namespace, role)` in `src/modules/namespaces/namespace.service.js` is now
+the one place that says "ADMIN inside an organization, nothing in a personal
+namespace". `src/middleware/requireAdmin.js` wraps it for routes. It replaces the
+`requireNamespaceAdmin` and `requireProjectAdmin` functions, which were the same code
+under two names, eleven inline copies across the namespace, project and file routes,
+and three copies in `chat.tools.js`.
+
+The middleware sits exactly where each inline check used to run, which is after
+`validate` on the routes that validated first and after multer on the key merge
+route. Moving it earlier would turn some 400 answers into 403 answers for a member,
+which is a behaviour change, so the order was kept.
+
+`tests/access.test.js`, `exportFormat`, `accountAi` and `organization` cover the
+refusal branch: coverage reports both branches of `requireAdmin.js`.
+
+Server suite: 560 passing across 19 suites, unchanged.

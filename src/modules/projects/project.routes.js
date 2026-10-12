@@ -6,6 +6,7 @@ const { validate } = require('../../middleware/validate');
 const { authenticate } = require('../../middleware/authenticate');
 const { uploadLimiter } = require('../../middleware/rateLimit');
 const { uploadTranslationFile } = require('../../middleware/upload');
+const requireAdmin = require('../../middleware/requireAdmin');
 const namespaceService = require('../namespaces/namespace.service');
 const projectService = require('./project.service');
 const fileService = require('../files/file.service');
@@ -37,24 +38,6 @@ router.use(
   }),
 );
 
-/**
- * Requires at least ADMIN inside an organization.
- *
- * A personal namespace has a single owner, so the check is a no operation
- * there.
- *
- * @param {import('express').Request} req Request.
- * @param {import('express').Response} res Response.
- * @param {Function} next Express next handler.
- * @returns {void}
- */
-function requireProjectAdmin(req, res, next) {
-  if (req.namespace.type === 'ORG') {
-    namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-  }
-  next();
-}
-
 router.get(
   '/:projectId',
   asyncHandler(async (req, res) => {
@@ -70,7 +53,7 @@ router.get(
 
 router.patch(
   '/:projectId/settings',
-  requireProjectAdmin,
+  requireAdmin,
   validate(schemas.updateProjectSchema),
   asyncHandler(async (req, res) => {
     const project = await projectService.updateProject(req.project, req.body);
@@ -98,7 +81,7 @@ router.get(
 
 router.put(
   '/:projectId/description',
-  requireProjectAdmin,
+  requireAdmin,
   validate(schemas.updateProjectDescriptionSchema),
   asyncHandler(async (req, res) => {
     const project = await projectService.updateProjectDescription(
@@ -111,7 +94,7 @@ router.put(
 
 router.delete(
   '/:projectId',
-  requireProjectAdmin,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await req.project.destroy();
     res.status(204).send();
