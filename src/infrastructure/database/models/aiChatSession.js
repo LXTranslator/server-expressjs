@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `ai_chat_sessions` model.
@@ -39,29 +40,11 @@ module.exports = (sequelize) => {
        * the database, because the identifier exists in the turn that creates the
        * conversation and has to be the same one the log rows carry.
        */
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
+      id: uuidKey(),
       /** Namespace the conversation happened in, and whose credentials paid. */
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      accountId: reference('accounts', 'account_id'),
       /** The person whose conversation it is. */
-      userAccountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'user_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      userAccountId: reference('accounts', 'user_id'),
       /**
        * What the conversation is called.
        *
@@ -98,12 +81,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'last_message_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'ai_chat_sessions',

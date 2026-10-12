@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { reference, createdAt } = require('./columns');
 
 /**
  * Defines the `ai_chat_logs` model.
@@ -47,23 +48,9 @@ module.exports = (sequelize) => {
         field: 'session_id',
       },
       /** Namespace the conversation happened in, and whose credentials paid. */
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      accountId: reference('accounts', 'account_id'),
       /** The person who asked, even when an organization's credential answered. */
-      userAccountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'user_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      userAccountId: reference('accounts', 'user_id'),
       userPrompt: {
         type: DataTypes.TEXT,
         allowNull: false,
@@ -115,12 +102,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'embedding_model',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'ai_chat_logs',

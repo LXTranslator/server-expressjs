@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `account_recovery_codes` model.
@@ -28,19 +29,8 @@ module.exports = (sequelize) => {
   const AccountRecoveryCode = sequelize.define(
     'AccountRecoveryCode',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       /** SHA-256 hex digest of the normalized code. */
       codeHash: {
         type: DataTypes.STRING(64),
@@ -53,12 +43,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'consumed_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'account_recovery_codes',

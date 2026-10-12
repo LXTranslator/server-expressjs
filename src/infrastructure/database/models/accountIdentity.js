@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `account_identities` model.
@@ -27,19 +28,8 @@ module.exports = (sequelize) => {
   const AccountIdentity = sequelize.define(
     'AccountIdentity',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       /** Provider name, resolved through the fixed registry. STRING, never ENUM. */
       provider: {
         type: DataTypes.STRING(20),
@@ -74,12 +64,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'last_login_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'account_identities',

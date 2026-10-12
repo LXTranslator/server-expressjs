@@ -161,3 +161,27 @@ to nothing.
 
 Server suite: 600 passing across 19 suites, unchanged. `tests/chat.test.js` covers
 the tool files at 96.9 percent of lines.
+
+### Task 5 — refactor/model-columns
+
+`src/infrastructure/database/models/columns.js` holds the three column definitions
+most tables repeated, each returned as a new object per call because Sequelize writes
+into the attribute objects it is given:
+
+* `uuidKey()`, the random UUID primary key, used by fifteen models.
+* `reference(table, field, options)`, the cascading reference to another table's
+  `id`, used by all twenty references. Only `file.project_id` (an integer) and
+  `oauth_states.account_id` (nullable) pass options.
+* `createdAt()`, the `created_at` column, used by all eighteen models.
+
+Field comments stayed on the line above each column. A block was replaced only where
+it matched the shared definition exactly, so nothing was folded in by approximation.
+
+Checked by diff, as decided above: every model's attributes, indexes and timestamp
+options, and the SQLite table definitions `sync()` creates, were dumped before and
+after the change and are identical.
+
+By code lines, excluding comments and blank lines, the models went from 1,673 to
+1,429.
+
+Server suite: 600 passing across 19 suites, unchanged.

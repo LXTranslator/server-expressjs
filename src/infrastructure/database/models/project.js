@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { reference, createdAt } = require('./columns');
 
 /**
  * Defines the `projects` model.
@@ -26,14 +27,7 @@ module.exports = (sequelize) => {
         autoIncrement: true,
         primaryKey: true,
       },
-      namespaceAccountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'namespace_account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      namespaceAccountId: reference('accounts', 'namespace_account_id'),
       name: {
         type: DataTypes.STRING(100),
         allowNull: false,
@@ -53,12 +47,7 @@ module.exports = (sequelize) => {
         allowNull: false,
         field: 'ai_model',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'projects',

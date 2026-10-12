@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /** Lifecycle of an uploaded translation file. */
 const FILE_STATUSES = ['PENDING', 'PROCESSING', 'READY', 'FAILED'];
@@ -22,19 +23,8 @@ module.exports = (sequelize) => {
   const File = sequelize.define(
     'File',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      projectId: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        field: 'project_id',
-        references: { model: 'projects', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      projectId: reference('projects', 'project_id', { type: DataTypes.INTEGER }),
       /** Sanitised original name; never used to build a filesystem path. */
       filename: {
         type: DataTypes.STRING(128),
@@ -88,12 +78,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'processed_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'files',

@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /** Purposes a short lived token may be minted for. */
 const TOKEN_PURPOSES = ['PASSWORD_RESET', 'EMAIL_CHANGE', 'SETTINGS_UPDATE'];
@@ -26,19 +27,8 @@ module.exports = (sequelize) => {
     'AuthToken',
     {
       /** Mirrors the `jti` claim of the issued JWT. */
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       purpose: {
         type: DataTypes.ENUM(...TOKEN_PURPOSES),
         allowNull: false,
@@ -65,12 +55,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'consumed_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'auth_tokens',
