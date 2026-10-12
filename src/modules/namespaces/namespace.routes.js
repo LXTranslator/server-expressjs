@@ -5,6 +5,7 @@ const asyncHandler = require('../../core/asyncHandler');
 const { validate } = require('../../middleware/validate');
 const { authenticate } = require('../../middleware/authenticate');
 const { uploadLimiter } = require('../../middleware/rateLimit');
+const requireAdmin = require('../../middleware/requireAdmin');
 const chatRoutes = require('../chat/chat.routes');
 const namespaceService = require('./namespace.service');
 const orgService = require('../orgs/org.service');
@@ -179,10 +180,8 @@ router.get(
 router.post(
   '/:namespace/export_formats',
   validate(exportFormatSchemas.createExportFormatSchema),
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     const format = await exportFormatService.createFormat(req.namespace.id, req.body);
     res.status(201).json({ data: { export_format: format } });
   }),
@@ -191,10 +190,8 @@ router.post(
 router.patch(
   '/:namespace/export_formats/:formatId',
   validate(exportFormatSchemas.updateExportFormatSchema),
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     const format = await exportFormatService.updateFormat(
       req.namespace.id,
       req.params.formatId,
@@ -206,10 +203,8 @@ router.patch(
 
 router.delete(
   '/:namespace/export_formats/:formatId',
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     await exportFormatService.removeFormat(req.namespace.id, req.params.formatId);
     res.status(204).send();
   }),
@@ -230,27 +225,9 @@ router.delete(
  * role.
  */
 
-/**
- * Requires at least ADMIN inside an organization.
- *
- * A personal namespace has a single owner, so the check is a no operation
- * there.
- *
- * @param {import('express').Request} req Request.
- * @param {import('express').Response} res Response.
- * @param {Function} next Express next handler.
- * @returns {void}
- */
-function requireNamespaceAdmin(req, res, next) {
-  if (req.namespace.type === 'ORG') {
-    namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-  }
-  next();
-}
-
 router.get(
   '/:namespace/settings/ai_keys',
-  requireNamespaceAdmin,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     const keys = await accountKeyService.listApiKeys(req.namespace.id);
     res.json({ data: { keys } });
@@ -259,7 +236,7 @@ router.get(
 
 router.post(
   '/:namespace/settings/ai_keys',
-  requireNamespaceAdmin,
+  requireAdmin,
   validate(accountKeySchemas.addAccountApiKeySchema),
   asyncHandler(async (req, res) => {
     const key = await accountKeyService.addApiKey(req.namespace.id, req.body);
@@ -269,7 +246,7 @@ router.post(
 
 router.post(
   '/:namespace/settings/ai_keys/reorder',
-  requireNamespaceAdmin,
+  requireAdmin,
   validate(accountKeySchemas.reorderAccountApiKeysSchema),
   asyncHandler(async (req, res) => {
     const keys = await accountKeyService.reorderApiKeys(
@@ -282,7 +259,7 @@ router.post(
 
 router.patch(
   '/:namespace/settings/ai_keys/:keyId',
-  requireNamespaceAdmin,
+  requireAdmin,
   validate(accountKeySchemas.updateAccountApiKeySchema),
   asyncHandler(async (req, res) => {
     const key = await accountKeyService.updateApiKey(
@@ -296,7 +273,7 @@ router.patch(
 
 router.delete(
   '/:namespace/settings/ai_keys/:keyId',
-  requireNamespaceAdmin,
+  requireAdmin,
   asyncHandler(async (req, res) => {
     await accountKeyService.removeApiKey(req.namespace.id, req.params.keyId);
     res.status(204).send();
@@ -325,11 +302,8 @@ router.post(
   '/:namespace/languages',
   uploadLimiter,
   validate(projectSchemas.addNamespaceLanguagesSchema),
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
-
     const result = await projectService.addLanguagesAcrossProjects({
       namespace: req.namespace,
       actor: req.account,
@@ -356,12 +330,10 @@ router.get(
 router.post(
   '/:namespace/projects',
   validate(projectSchemas.createProjectSchema),
+  // Read access is enough to view a namespace, but creating inside an
+  // organization requires at least ADMIN.
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    // Read access is enough to view a namespace, but creating inside an
-    // organization requires at least ADMIN.
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     const project = await projectService.createProject(req.namespace.id, req.body, {
       actorAccountId: req.account.id,
     });

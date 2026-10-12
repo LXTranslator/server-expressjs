@@ -158,15 +158,15 @@ async function resolveFile(context, fileId) {
 }
 
 /**
- * Asserts the caller may change things in the namespace owning a project.
+ * Asserts the caller may change things in a namespace.
  *
- * @param {object} access Resolved project access.
+ * @param {object} namespace Namespace being changed.
+ * @param {string} role Role the caller holds in it.
  * @returns {object|null} A failure result, or null when the caller may proceed.
  */
-function requireAdmin(access) {
-  if (access.namespace.type !== 'ORG') return null;
+function requireAdmin(namespace, role) {
   try {
-    namespaceService.assertRole(access.role, 'ADMIN');
+    namespaceService.assertAdmin(namespace, role);
     return null;
   } catch (error) {
     return fail(error.message);
@@ -426,13 +426,8 @@ const TOOLS = [
      * @returns {Promise<object>} Tool result.
      */
     async handler(args, context) {
-      if (context.namespace.type === 'ORG') {
-        try {
-          namespaceService.assertRole(context.namespaceRole, 'ADMIN');
-        } catch (error) {
-          return fail(error.message);
-        }
-      }
+      const denied = requireAdmin(context.namespace, context.namespaceRole);
+      if (denied !== null) return denied;
 
       // The person asked for translation but attached nothing. Say so rather
       // than creating a project that will sit empty and look broken.
@@ -567,7 +562,7 @@ const TOOLS = [
       const { access, failure } = await resolveProject(context, args.project_id);
       if (failure !== null) return failure;
 
-      const denied = requireAdmin(access);
+      const denied = requireAdmin(access.namespace, access.role);
       if (denied !== null) return denied;
 
       // Without an attachment there is nothing to upload, and the person needs
@@ -751,7 +746,7 @@ const TOOLS = [
       const { access, failure } = await resolveProject(context, args.project_id);
       if (failure !== null) return failure;
 
-      const denied = requireAdmin(access);
+      const denied = requireAdmin(access.namespace, access.role);
       if (denied !== null) return denied;
 
       const project = await projectService.updateProjectDescription(
@@ -901,7 +896,7 @@ const TOOLS = [
           continue;
         }
 
-        const refused = requireAdmin(access);
+        const refused = requireAdmin(access.namespace, access.role);
         if (refused !== null) {
           skipped.push({ project_id: identifier, reason: refused.error });
           continue;
@@ -1067,7 +1062,7 @@ const TOOLS = [
           continue;
         }
 
-        const denied = requireAdmin(access);
+        const denied = requireAdmin(access.namespace, access.role);
         if (denied !== null) {
           skipped.push({ project_id: identifier, reason: denied.error });
           continue;
@@ -1225,13 +1220,8 @@ const TOOLS = [
     async handler(args, context) {
       // A format belongs to the namespace and every project underneath it, so
       // writing one is an ADMIN action exactly as the endpoint makes it.
-      if (context.namespace.type === 'ORG') {
-        try {
-          namespaceService.assertRole(context.namespaceRole, 'ADMIN');
-        } catch (error) {
-          return fail(error.message);
-        }
-      }
+      const denied = requireAdmin(context.namespace, context.namespaceRole);
+      if (denied !== null) return denied;
 
       let format;
       try {
@@ -1327,7 +1317,7 @@ const TOOLS = [
       const { access, failure } = await resolveProject(context, args.project_id);
       if (failure !== null) return failure;
 
-      const denied = requireAdmin(access);
+      const denied = requireAdmin(access.namespace, access.role);
       if (denied !== null) return denied;
 
       const keyNames = Object.keys(args.keys);
@@ -1460,7 +1450,7 @@ const TOOLS = [
       const { access, failure } = await resolveFile(context, args.file_id);
       if (failure !== null) return failure;
 
-      const denied = requireAdmin(access);
+      const denied = requireAdmin(access.namespace, access.role);
       if (denied !== null) return denied;
 
       const inlineKeys = args.keys ?? null;

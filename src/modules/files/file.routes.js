@@ -6,6 +6,7 @@ const { validate, validated } = require('../../middleware/validate');
 const { authenticate } = require('../../middleware/authenticate');
 const { uploadLimiter } = require('../../middleware/rateLimit');
 const { uploadTranslationFile } = require('../../middleware/upload');
+const requireAdmin = require('../../middleware/requireAdmin');
 const { BadRequestError } = require('../../core/errors');
 const namespaceService = require('../namespaces/namespace.service');
 const fileService = require('./file.service');
@@ -224,11 +225,8 @@ router.get(
 router.post(
   '/:fileId/languages',
   validate(fileSchemas.addLanguagesSchema),
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
-
     const { file, added } = await fileService.addTargetLanguages({
       file: req.file,
       project: req.project,
@@ -261,10 +259,8 @@ router.post(
     next();
   },
   uploadTranslationFile,
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     if (!req.file) {
       throw new BadRequestError('Attach a JSON translation file.');
     }
@@ -286,10 +282,8 @@ router.post(
 /** Re-runs the pipeline for a file that failed. */
 router.post(
   '/:fileId/reprocess',
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     // Rebuilt from the stored master text so a rerun does not depend on the
     // original upload still being on disk, and because the master carries every
     // correction made in the editor since.
@@ -312,10 +306,8 @@ router.post(
 
 router.delete(
   '/:fileId',
+  requireAdmin,
   asyncHandler(async (req, res) => {
-    if (req.namespace.type === 'ORG') {
-      namespaceService.assertRole(req.namespaceRole, 'ADMIN');
-    }
     await fileService.deleteFile(req.project.id, req.file.id);
     res.status(204).send();
   }),
