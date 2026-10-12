@@ -26,3 +26,4 @@ same commit. Writing memory needs no approval.
 |---|---|
 | [`../memory/tasks/agents-setup.md`](../memory/tasks/agents-setup.md) | You are working on the instruction system itself, or need to know how this repository adopted the shared set. |
 | [`../memory/tasks/auth-security-refinement.md`](../memory/tasks/auth-security-refinement.md) | You are working on alternative sign in, the second factor, account linking, the policy pages, or the upload containment fix. |
+| [`../memory/tasks/code-reduction.md`](../memory/tasks/code-reduction.md) | You are removing duplicated code, or touching the admin guard, the AI vendor request helper, the chat tool layout, the shared model columns or the sign in response. |
