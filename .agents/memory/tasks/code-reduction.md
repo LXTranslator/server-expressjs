@@ -239,3 +239,37 @@ shape `mailer.js` passes still returns a transport with `sendMail`, and a send t
 `.agents/security/supply-chain.md` already states, so the policy needs no change.
 
 Server suite: 600 passing across 19 suites, unchanged.
+
+### Task 8 — release/0.25.1
+
+Version 0.25.1, a patch because nothing observable changed. `package.json` and both
+version fields of `package-lock.json`, `wiki/logs/0/25/1/CHANGELOG.md`, the
+`logs-index.md` row, and a "Shared pieces" section in
+`.agents/memory/state/repository-state.md` naming what is now written once.
+
+Across the chain, code lines under `src/`, excluding comments and blank lines, went from
+11,167 to 10,690. The bigger gain is structural: the admin check, the vendor request,
+the tool arguments, the model columns and the session response each have one place to
+change now.
+
+Server chain complete: eight tasks, eight branches, 600 tests passing across 19 suites,
+`npm audit` clean. **None is merged**; merging is left to the owner.
+
+## Discovery findings, awaiting the owner's decision
+
+Proposed rather than written, per the discovery protocol:
+
+1. `.gitignore` has no `.agents/plans/` line, so the working plan the plan creator puts
+   there shows up as untracked. It was kept out of every commit through
+   `.git/info/exclude` instead.
+2. `.agents/security/broken-access-control.md`, "When adding a route", says to decide
+   the minimum role and call `assertRole`. That is still true, but an organization ADMIN
+   route should now use `requireAdmin`, and the checklist could say so.
+3. The `provider` on a `ProviderError` is the lowercase adapter name on a translation
+   call and the display label on a chat or embedding call. Making it one or the other is
+   a behaviour change, so it needs a decision first.
+4. zod 4 can produce JSON Schema itself (`z.toJSONSchema`). Deriving each tool's
+   parameters from its zod schema would drop the second half of every `defineArguments`
+   pair. Not done here, because the descriptions the model reads would have to move onto
+   the zod schemas and the output would need checking against what the model is shown
+   today.

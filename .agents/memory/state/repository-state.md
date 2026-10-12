@@ -7,7 +7,7 @@ description: Current known state of server-expressjs after adopting the shared i
 
 ## What this is
 
-`lxtranslator_server`, version 0.25.0. The Express backend for LXTranslator, serving the
+`lxtranslator_server`, version 0.25.1. The Express backend for LXTranslator, serving the
 API that `LXTranslator/client-reactjs` consumes.
 
 ## Stack
@@ -52,6 +52,19 @@ directly would bypass the factor silently — that is the mistake to watch for.
 
 Five tables carry it: `account_mfa`, `account_recovery_codes`, `mfa_challenges`,
 `oauth_states`, `account_identities`.
+
+## Shared pieces, as of 0.25.1
+
+Written once and meant to be reused rather than copied again:
+
+* `requireAdmin` (`src/middleware/requireAdmin.js`) and `assertAdmin` for the
+  organization ADMIN check.
+* `src/infrastructure/ai/vendorRequest.js` for any call to an AI vendor.
+* `src/modules/chat/tools/` for assistant tool definitions, with `defineArguments`
+  declaring each argument once. `chat.tools.js` keeps the ordered list and the dispatcher.
+* `src/infrastructure/database/models/columns.js` for a key, a reference or
+  `created_at`.
+* `src/modules/auth/auth.http.js` for any route that starts a session.
 
 ## The schema constraint that governs every future change here
 
