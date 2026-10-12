@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /** Shape of one exported leaf: an object carrying fields, or the bare string. */
 const LEAF_SHAPES = ['OBJECT', 'STRING'];
@@ -42,19 +43,8 @@ module.exports = (sequelize) => {
   const ExportFormat = sequelize.define(
     'ExportFormat',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      namespaceAccountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'namespace_account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      namespaceAccountId: reference('accounts', 'namespace_account_id'),
       /** Identifier a client sends to select this format, unique per namespace. */
       formatId: {
         type: DataTypes.STRING(50),
@@ -94,12 +84,7 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: true,
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'export_formats',

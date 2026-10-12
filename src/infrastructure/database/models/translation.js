@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 const { TEXT_HASH_LENGTH } = require('../../../core/textHash');
 
 /**
@@ -17,19 +18,8 @@ module.exports = (sequelize) => {
   const Translation = sequelize.define(
     'Translation',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      translationKeyId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'translation_key_id',
-        references: { model: 'translation_keys', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      translationKeyId: reference('translation_keys', 'translation_key_id'),
       langCode: {
         type: DataTypes.STRING(20),
         allowNull: false,
@@ -53,12 +43,7 @@ module.exports = (sequelize) => {
         defaultValue: false,
         field: 'is_manual',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'translations',

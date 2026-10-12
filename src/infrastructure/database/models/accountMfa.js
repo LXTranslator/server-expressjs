@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `account_mfa` model.
@@ -29,19 +30,8 @@ module.exports = (sequelize) => {
   const AccountMfa = sequelize.define(
     'AccountMfa',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       /** AES-256-GCM envelope wrapping the base32 secret. */
       secret: {
         type: DataTypes.TEXT,
@@ -73,12 +63,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'last_verified_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'account_mfa',

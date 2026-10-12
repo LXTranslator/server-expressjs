@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Membership roles, ordered from most to least privileged.
@@ -21,38 +22,15 @@ module.exports = (sequelize) => {
   const OrgMember = sequelize.define(
     'OrgMember',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      orgAccountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'org_account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
-      userAccountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'user_account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      orgAccountId: reference('accounts', 'org_account_id'),
+      userAccountId: reference('accounts', 'user_account_id'),
       role: {
         type: DataTypes.ENUM(...MEMBER_ROLES),
         allowNull: false,
         defaultValue: 'MEMBER',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'org_members',

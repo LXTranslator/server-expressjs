@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `mfa_challenges` model.
@@ -27,19 +28,8 @@ module.exports = (sequelize) => {
   const MfaChallenge = sequelize.define(
     'MfaChallenge',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       /** SHA-256 hex digest of the challenge string. The string itself is never stored. */
       tokenHash: {
         type: DataTypes.STRING(64),
@@ -67,12 +57,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'consumed_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'mfa_challenges',

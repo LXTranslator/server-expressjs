@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, createdAt } = require('./columns');
 
 /** Namespace routing identifier: lowercase letters, digits and underscores. */
 const USER_ID_PATTERN = /^[a-z0-9_]{3,32}$/;
@@ -26,11 +27,7 @@ module.exports = (sequelize) => {
   const Account = sequelize.define(
     'Account',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
+      id: uuidKey(),
       userId: {
         type: DataTypes.STRING(32),
         allowNull: false,
@@ -94,12 +91,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'locked_until',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'accounts',

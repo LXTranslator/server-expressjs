@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `account_api_keys` model.
@@ -31,19 +32,8 @@ module.exports = (sequelize) => {
   const AccountApiKey = sequelize.define(
     'AccountApiKey',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       /** Platform name, resolved through the fixed provider registry. */
       provider: {
         type: DataTypes.STRING(50),
@@ -113,12 +103,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'last_error_reason',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'account_api_keys',

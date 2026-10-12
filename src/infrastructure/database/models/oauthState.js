@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * Defines the `oauth_states` model.
@@ -29,11 +30,7 @@ module.exports = (sequelize) => {
   const OauthState = sequelize.define(
     'OauthState',
     {
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
+      id: uuidKey(),
       /** Provider name, resolved through the fixed registry. */
       provider: {
         type: DataTypes.STRING(20),
@@ -63,14 +60,7 @@ module.exports = (sequelize) => {
        * Nullable on purpose: a sign in has no account until the provider
        * identity resolves to one.
        */
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      accountId: reference('accounts', 'account_id', { allowNull: true }),
       expiresAt: {
         type: DataTypes.DATE,
         allowNull: false,
@@ -81,12 +71,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'consumed_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'oauth_states',

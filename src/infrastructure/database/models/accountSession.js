@@ -1,6 +1,7 @@
 'use strict';
 
 const { DataTypes } = require('sequelize');
+const { uuidKey, reference, createdAt } = require('./columns');
 
 /**
  * What a row authenticates.
@@ -42,19 +43,8 @@ module.exports = (sequelize) => {
        * For a browser session this mirrors the `jti` of the issued JWT, which
        * is what lets a presented token find its row without a table scan.
        */
-      id: {
-        type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
-        primaryKey: true,
-      },
-      accountId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: 'account_id',
-        references: { model: 'accounts', key: 'id' },
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
-      },
+      id: uuidKey(),
+      accountId: reference('accounts', 'account_id'),
       kind: {
         type: DataTypes.ENUM(...SESSION_KINDS),
         allowNull: false,
@@ -120,12 +110,7 @@ module.exports = (sequelize) => {
         allowNull: true,
         field: 'revoked_at',
       },
-      createdAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: 'created_at',
-      },
+      createdAt: createdAt(),
     },
     {
       tableName: 'account_sessions',
