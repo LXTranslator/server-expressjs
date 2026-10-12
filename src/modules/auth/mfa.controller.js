@@ -4,6 +4,7 @@ const asyncHandler = require('../../core/asyncHandler');
 const mfaService = require('./mfa.service');
 const authService = require('./auth.service');
 const accountService = require('../accounts/account.service');
+const { clientContext, sessionData } = require('./auth.http');
 
 /**
  * HTTP translation for the second factor.
@@ -13,19 +14,6 @@ const accountService = require('../accounts/account.service');
  * factor off is exactly as sensitive as turning it on, so a stolen session
  * cannot quietly remove it.
  */
-
-/**
- * Records where a sign in came from.
- *
- * The user agent only. The address is deliberately not stored; a session list
- * is for recognising your own devices, not for building a location history.
- *
- * @param {import('express').Request} req Request.
- * @returns {{userAgent?: string}} Session context.
- */
-function clientContext(req) {
-  return { userAgent: req.get('user-agent') ?? undefined };
-}
 
 /**
  * GET /auth/mfa
@@ -101,18 +89,8 @@ const disable = asyncHandler(async (req, res) => {
  * Answers a login challenge and, if the code holds, starts the session.
  */
 const completeChallenge = asyncHandler(async (req, res) => {
-  const { account, token, expiresIn } = await authService.completeMfaChallenge(
-    req.body,
-    clientContext(req),
-  );
-  res.json({
-    data: {
-      account: account.toPublicJson(),
-      access_token: token,
-      token_type: 'Bearer',
-      expires_in: expiresIn,
-    },
-  });
+  const session = await authService.completeMfaChallenge(req.body, clientContext(req));
+  res.json({ data: sessionData(session) });
 });
 
 module.exports = { status, setup, enable, regenerate, disable, completeChallenge };
