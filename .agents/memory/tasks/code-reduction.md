@@ -5,8 +5,9 @@ description: Task record for reducing duplicated code in the server without chan
 
 # Task Record — code-reduction
 
-Confirmed with the owner before any of it was built. Seven tasks in this repository,
-the two reserved slots and five pieces of work between them. The client has its own
+Confirmed with the owner before any of it was built. Eight tasks in this repository,
+the two reserved slots and six pieces of work between them. The dependency task was
+added before the release, when the audit turned out to have failed since 0.25.0. The client has its own
 chain in `LXTranslator/client-reactjs`; neither depends on the other.
 
 ## Why
@@ -37,6 +38,7 @@ the wording around them differs:
 | Characterisation tests before the adapter refactor | Only the OpenRouter adapter has direct tests. The OpenAI and Anthropic error paths are pinned first, against the old code, so the refactor is checked by tests written before it. |
 | Model columns verified by diff | Production runs bare `sequelize.sync()`, which never alters an existing table, so a column definition that drifted would surface only on a fresh database. Every model's attributes are dumped before and after and must be identical. |
 | Branch convention over the harness branch | The harness named `claude/project-thread-31p81h`; `branching-strategy.md` forbids a tool preset prefix and a generated suffix, and the owner asked for the branch strategy. |
+| Dependency advisories fixed in this chain | Six advisories, one critical, were published against the tree after 0.25.0 audited clean. Every fix is inside the declared ranges, so only `package-lock.json` changes; shipping a release that knowingly fails `npm run audit:security` was the worse option. |
 | Gates answered by the recommended choice | The owner said they would be away and asked for each question to be posted as a choice with a recommendation, then for the recommendation to be taken. That stands in for the plan, pull request and version gates. Merging is left to the owner. |
 
 ## The tasks
@@ -49,7 +51,8 @@ the wording around them differs:
 | 4 | Chat tools split | Tool definitions by area under `tools/`, shared helpers, one issue formatter | server | `refactor/chat-tools` | |
 | 5 | Shared model columns | UUID key, account reference and timestamp builders | server | `refactor/model-columns` | |
 | 6 | Shared sign in response | One sender for the password and provider sign in result | server | `refactor/sign-in-response` | |
-| 7 | Release | Version, changelog, indexes, close this record | server | `release/{version}` | |
+| 7 | Dependency advisories | Lockfile only update clearing the audit | server | `build/dependencies` | |
+| 8 | Release | Version, changelog, indexes, close this record | server | `release/{version}` | |
 
 Task 1 branches from `master`; task `k` branches from task `k-1`. Tasks 2 and 4 both
 touch `chat.tools.js`, which is why the guard lands first and the split builds on it.
@@ -206,5 +209,33 @@ covers both branches of `sendSignIn` and every line of the new file.
 
 By code lines, excluding comments and blank lines, the three controllers and the new
 file came to 270, down from 304 for the controllers alone.
+
+Server suite: 600 passing across 19 suites, unchanged.
+
+### Task 7 — build/dependencies
+
+`npm audit` on `master` reported six advisories, none of them from this work: they
+were published after 0.25.0, which audited clean.
+
+| Package | Severity | Locked before | Locked after | Reaches production |
+|---|---|---|---|---|
+| `proxy-addr` | critical | 2.0.7 | 2.0.8 | yes, through express |
+| `nodemailer` | high | 10.0.1 | 10.1.0 | yes |
+| `brace-expansion` | high | 5.0.9 | 5.0.12 | no, tests only |
+| `multer` | moderate | 2.3.0 | 2.4.0 | yes |
+| `moment` | moderate | 2.30.1 | 2.31.0 | yes, transitively |
+| `ip-address` | moderate | 10.7.0 | 10.7.4 | yes, transitively |
+
+`npm audit fix` resolved all six inside the ranges `package.json` already declares, so
+`package.json` is untouched and no dependency was added. `multer` 2.4.0 no longer pulls
+in `concat-stream`, `buffer-from` and `typedarray`, which left the tree.
+
+`nodemailer` is not exercised by the suite, which runs the console transport, so it was
+checked directly as at 0.25.0: `createTransport` with the `{host, port, secure, auth}`
+shape `mailer.js` passes still returns a transport with `sendMail`, and a send through
+`jsonTransport` with the `{from, to, subject, text}` shape delivers every field.
+
+`npm audit` reports 0 vulnerabilities again, which is what
+`.agents/security/supply-chain.md` already states, so the policy needs no change.
 
 Server suite: 600 passing across 19 suites, unchanged.
