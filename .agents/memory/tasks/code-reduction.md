@@ -185,3 +185,26 @@ By code lines, excluding comments and blank lines, the models went from 1,673 to
 1,429.
 
 Server suite: 600 passing across 19 suites, unchanged.
+
+### Task 6 — refactor/sign-in-response
+
+`src/modules/auth/auth.http.js` holds what the three auth controllers each wrote out
+for themselves:
+
+* `sendSignIn(res, result)` answers a password or provider sign in, with either the
+  second factor challenge or the session. `auth.controller.js` and
+  `oauth.controller.js` carried the same two branches word for word.
+* `sessionData(session)` builds the account, bearer token and lifetime body that
+  registering, both sign ins and an answered second factor challenge all return. It
+  was written out in four places.
+* `clientContext(req)`, the user agent a new session records, was defined in all three
+  controllers. The longest of the three comments, the one explaining why the address
+  is not stored, moved with it.
+
+The response bodies, their key order and their status codes are unchanged. The suite
+covers both branches of `sendSignIn` and every line of the new file.
+
+By code lines, excluding comments and blank lines, the three controllers and the new
+file came to 270, down from 304 for the controllers alone.
+
+Server suite: 600 passing across 19 suites, unchanged.

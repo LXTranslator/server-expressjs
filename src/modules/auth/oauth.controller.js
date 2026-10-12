@@ -3,6 +3,7 @@
 const asyncHandler = require('../../core/asyncHandler');
 const registry = require('../../infrastructure/oauth/providers');
 const oauthService = require('./oauth.service');
+const { clientContext, sendSignIn } = require('./auth.http');
 
 /**
  * HTTP translation for provider sign in.
@@ -11,16 +12,6 @@ const oauthService = require('./oauth.service');
  * whether a token happened to be present. A single route where a missing check
  * silently downgrades a link to a sign in is the wrong way round to fail.
  */
-
-/**
- * Records where a sign in came from.
- *
- * @param {import('express').Request} req Request.
- * @returns {{userAgent?: string}} Session context.
- */
-function clientContext(req) {
-  return { userAgent: req.get('user-agent') ?? undefined };
-}
 
 /**
  * GET /auth/oauth/providers
@@ -69,27 +60,9 @@ const completeLogin = asyncHandler(async (req, res) => {
     context: clientContext(req),
   });
 
-  if (result.mfaRequired) {
-    // The same shape a password sign in produces, so the client has one branch
-    // rather than two.
-    res.json({
-      data: {
-        mfa_required: true,
-        challenge_token: result.challengeToken,
-        expires_in: result.expiresIn,
-      },
-    });
-    return;
-  }
-
-  res.json({
-    data: {
-      account: result.account.toPublicJson(),
-      access_token: result.token,
-      token_type: 'Bearer',
-      expires_in: result.expiresIn,
-    },
-  });
+  // The same answer a password sign in gives, so the client has one branch
+  // rather than two.
+  sendSignIn(res, result);
 });
 
 /**

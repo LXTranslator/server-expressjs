@@ -6,6 +6,7 @@ const authService = require('./auth.service');
 const sessionService = require('./session.service');
 const apiTokenService = require('./apiToken.service');
 const usageService = require('../usage/usage.service');
+const { clientContext, sessionData, sendSignIn } = require('./auth.http');
 
 /**
  * HTTP handlers for the authentication module.
@@ -14,22 +15,6 @@ const usageService = require('../usage/usage.service');
  * nothing more. All rules live in the service, which keeps them testable
  * without a request object and reusable from other entry points.
  */
-
-/**
- * Describes the client a session is being created for.
- *
- * The user agent is the only thing recorded, and only so a list of sessions is
- * actionable: "sign out the one I do not recognise" needs something to
- * recognise. The address the request came from is deliberately not stored. It
- * locates a person, it changes constantly, and it answers that question worse
- * than the device string does.
- *
- * @param {import('express').Request} req Request.
- * @returns {{userAgent: string|undefined}} Session context.
- */
-function clientContext(req) {
-  return { userAgent: req.get('user-agent') ?? undefined };
-}
 
 /**
  * GET /auth/availability
@@ -49,18 +34,8 @@ const availability = asyncHandler(async (req, res) => {
  * Creates a personal namespace and returns a session.
  */
 const register = asyncHandler(async (req, res) => {
-  const { account, token, expiresIn } = await authService.register(
-    req.body,
-    clientContext(req),
-  );
-  res.status(201).json({
-    data: {
-      account: account.toPublicJson(),
-      access_token: token,
-      token_type: 'Bearer',
-      expires_in: expiresIn,
-    },
-  });
+  const session = await authService.register(req.body, clientContext(req));
+  res.status(201).json({ data: sessionData(session) });
 });
 
 /**
@@ -69,35 +44,7 @@ const register = asyncHandler(async (req, res) => {
  */
 const login = asyncHandler(async (req, res) => {
   const result = await authService.login(req.body, clientContext(req));
-
-  if (result.mfaRequired) {
-    /*
-     * 200 rather than 401. The credentials were correct, and a 401 is what
-     * every client treats as "this session is over" — answering one here would
-     * have the client discard the challenge it was just handed.
-     *
-     * The account is deliberately absent. `toPublicJson` carries the email
-     * address, and returning it now would hand that address to anybody holding
-     * the password, before the second factor has proved anything.
-     */
-    res.json({
-      data: {
-        mfa_required: true,
-        challenge_token: result.challengeToken,
-        expires_in: result.expiresIn,
-      },
-    });
-    return;
-  }
-
-  res.json({
-    data: {
-      account: result.account.toPublicJson(),
-      access_token: result.token,
-      token_type: 'Bearer',
-      expires_in: result.expiresIn,
-    },
-  });
+  sendSignIn(res, result);
 });
 
 /**
