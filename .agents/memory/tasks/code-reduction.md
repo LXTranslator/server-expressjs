@@ -45,14 +45,14 @@ the wording around them differs:
 
 | # | Title | Scope | Repository | Branch | PR |
 |---|---|---|---|---|---|
-| 1 | Task record | This file and its index row | server | `chore/code-reduction-plan` | |
-| 2 | One admin guard | One assertion and one middleware for the ORG ADMIN check | server | `refactor/admin-guard` | |
-| 3 | One vendor request helper | One deadline, transport, status and JSON handler for every AI adapter | server | `refactor/provider-request` | |
-| 4 | Chat tools split | Tool definitions by area under `tools/`, shared helpers, one issue formatter | server | `refactor/chat-tools` | |
-| 5 | Shared model columns | UUID key, account reference and timestamp builders | server | `refactor/model-columns` | |
-| 6 | Shared sign in response | One sender for the password and provider sign in result | server | `refactor/sign-in-response` | |
-| 7 | Dependency advisories | Lockfile only update clearing the audit | server | `build/dependencies` | |
-| 8 | Release | Version, changelog, indexes, close this record | server | `release/{version}` | |
+| 1 | Task record | This file and its index row | server | `chore/code-reduction-plan` | #34 |
+| 2 | One admin guard | One assertion and one middleware for the ORG ADMIN check | server | `refactor/admin-guard` | #35 |
+| 3 | One vendor request helper | One deadline, transport, status and JSON handler for every AI adapter | server | `refactor/provider-request` | #36 |
+| 4 | Chat tools split | Tool definitions by area under `tools/`, shared helpers, one issue formatter | server | `refactor/chat-tools` | #37 |
+| 5 | Shared model columns | UUID key, account reference and timestamp builders | server | `refactor/model-columns` | #38 |
+| 6 | Shared sign in response | One sender for the password and provider sign in result | server | `refactor/sign-in-response` | #39 |
+| 7 | Dependency advisories | Lockfile only update clearing the audit | server | `build/dependencies` | #40 |
+| 8 | Release | Version, changelog, indexes, close this record | server | `release/0.25.1` | #41 |
 
 Task 1 branches from `master`; task `k` branches from task `k-1`. Tasks 2 and 4 both
 touch `chat.tools.js`, which is why the guard lands first and the split builds on it.
@@ -239,3 +239,38 @@ shape `mailer.js` passes still returns a transport with `sendMail`, and a send t
 `.agents/security/supply-chain.md` already states, so the policy needs no change.
 
 Server suite: 600 passing across 19 suites, unchanged.
+
+### Task 8 — release/0.25.1
+
+Version 0.25.1, a patch because nothing observable changed. `package.json` and both
+version fields of `package-lock.json`, `wiki/logs/0/25/1/CHANGELOG.md`, the
+`logs-index.md` row, and a "Shared pieces" section in
+`.agents/memory/state/repository-state.md` naming what is now written once.
+
+Across the chain, code lines under `src/`, excluding comments and blank lines, went from
+11,167 to 10,690. The bigger gain is structural: the admin check, the vendor request,
+the tool arguments, the model columns and the session response each have one place to
+change now.
+
+Server chain complete: eight tasks, eight branches, 600 tests passing across 19 suites,
+`npm audit` clean. The `PR` column above is filled: #34 to #41, merged in that order,
+with #34 carrying the whole chain. **None is merged**; merging is left to the owner.
+
+## Discovery findings, awaiting the owner's decision
+
+Proposed rather than written, per the discovery protocol:
+
+1. `.gitignore` has no `.agents/plans/` line, so the working plan the plan creator puts
+   there shows up as untracked. It was kept out of every commit through
+   `.git/info/exclude` instead.
+2. `.agents/security/broken-access-control.md`, "When adding a route", says to decide
+   the minimum role and call `assertRole`. That is still true, but an organization ADMIN
+   route should now use `requireAdmin`, and the checklist could say so.
+3. The `provider` on a `ProviderError` is the lowercase adapter name on a translation
+   call and the display label on a chat or embedding call. Making it one or the other is
+   a behaviour change, so it needs a decision first.
+4. zod 4 can produce JSON Schema itself (`z.toJSONSchema`). Deriving each tool's
+   parameters from its zod schema would drop the second half of every `defineArguments`
+   pair. Not done here, because the descriptions the model reads would have to move onto
+   the zod schemas and the output would need checking against what the model is shown
+   today.
