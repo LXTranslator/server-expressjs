@@ -1,13 +1,8 @@
 'use strict';
 
-const config = require('../../../config');
-const { buildSystemPrompt, buildUserPrompt, parseTranslationReply } = require('../prompt');
-const {
-  ProviderError,
-  PROVIDER_ERROR_KINDS,
-  kindFromStatus,
-  kindFromTransportError,
-} = require('../providerError');
+const { buildSystemPrompt, buildUserPrompt } = require('../prompt');
+const { ProviderError, PROVIDER_ERROR_KINDS } = require('../providerError');
+const { postJson, readTranslations } = require('../vendorRequest');
 
 /**
  * Anthropic Messages API adapter.
@@ -26,6 +21,42 @@ const API_VERSION = '2023-06-01';
 
 /** Rough ceiling for a translated batch; the batch size keeps this comfortable. */
 const MAX_OUTPUT_TOKENS = 8192;
+
+/** How this adapter is named on an error. */
+const VENDOR = Object.freeze({ label: 'Anthropic', provider: 'anthropic' });
+
+/**
+ * Posts one Messages API request.
+ *
+ * `max_tokens` is required on every request, so it is added here rather than
+ * left for each call to remember.
+ *
+ * @param {string} apiKey Decrypted credential for this attempt.
+ * @param {object} body Request fields besides `max_tokens`.
+ * @returns {Promise<object>} Parsed reply body.
+ * @throws {ProviderError} Categorised so the fallback chain can act on it.
+ */
+function postMessages(apiKey, body) {
+  return postJson({
+    ...VENDOR,
+    endpoint: ENDPOINT,
+    headers: { 'x-api-key': apiKey, 'anthropic-version': API_VERSION },
+    body: { ...body, max_tokens: MAX_OUTPUT_TOKENS },
+  });
+}
+
+/**
+ * Joins the text blocks of a reply. Only text blocks carry the answer.
+ *
+ * @param {Array<object>} blocks Reply content blocks.
+ * @returns {string} The reply text, empty when there is none.
+ */
+function textOf(blocks) {
+  return blocks
+    .filter((block) => block?.type === 'text')
+    .map((block) => block.text)
+    .join('');
+}
 
 /**
  * Converts the neutral message shape into the Messages API shape.
@@ -113,57 +144,13 @@ module.exports = {
    * @throws {ProviderError} Categorised so the fallback chain can act on it.
    */
   async translateBatch({ apiKey, model, sourceLang, targetLang, texts }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.ai.requestTimeoutMs);
-
-    let response;
-    try {
-      response = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': API_VERSION,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: MAX_OUTPUT_TOKENS,
-          // Instructions stay in the system field, never concatenated with the
-          // untrusted content in the user turn.
-          system: buildSystemPrompt(sourceLang, targetLang),
-          messages: [{ role: 'user', content: buildUserPrompt(texts) }],
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw new ProviderError(
-        kindFromTransportError(error),
-        'The Anthropic request could not be completed.',
-        { provider: 'anthropic', cause: error },
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      throw new ProviderError(
-        kindFromStatus(response.status),
-        `Anthropic responded with status ${response.status}.`,
-        { status: response.status, provider: 'anthropic', cause: new Error(detail.slice(0, 300)) },
-      );
-    }
-
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        'Anthropic returned a body that was not valid JSON.',
-        { provider: 'anthropic', cause: error },
-      );
-    }
+    const payload = await postMessages(apiKey, {
+      model,
+      // Instructions stay in the system field, never concatenated with the
+      // untrusted content in the user turn.
+      system: buildSystemPrompt(sourceLang, targetLang),
+      messages: [{ role: 'user', content: buildUserPrompt(texts) }],
+    });
 
     // A safety decline arrives as a normal 200 with stop_reason "refusal", so
     // it has to be checked before the content array is read.
@@ -175,23 +162,8 @@ module.exports = {
       );
     }
 
-    // `content` is a list of blocks; only text blocks carry the reply.
-    const text = Array.isArray(payload?.content)
-      ? payload.content
-          .filter((block) => block?.type === 'text')
-          .map((block) => block.text)
-          .join('')
-      : '';
-
-    try {
-      return parseTranslationReply(text, texts.length);
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        `Anthropic returned an unusable reply: ${error.message}`,
-        { provider: 'anthropic', cause: error },
-      );
-    }
+    const text = Array.isArray(payload?.content) ? textOf(payload.content) : '';
+    return readTranslations(text, texts.length, VENDOR);
   },
 
   /**
@@ -214,71 +186,23 @@ module.exports = {
    * @throws {ProviderError} Categorised so the fallback chain can act on it.
    */
   async chat({ apiKey, model, system, messages, tools }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.ai.requestTimeoutMs);
-
-    let response;
-    try {
-      response = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': API_VERSION,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: MAX_OUTPUT_TOKENS,
-          system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-          messages: toAnthropicMessages(messages),
-          ...(Array.isArray(tools) && tools.length > 0
-            ? {
-                tools: tools.map((tool) => ({
-                  name: tool.name,
-                  description: tool.description,
-                  input_schema: tool.parameters,
-                })),
-              }
-            : {}),
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw new ProviderError(
-        kindFromTransportError(error),
-        'The Anthropic request could not be completed.',
-        { provider: 'anthropic', cause: error },
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      throw new ProviderError(
-        kindFromStatus(response.status),
-        `Anthropic responded with status ${response.status}.`,
-        { status: response.status, provider: 'anthropic', cause: new Error(detail.slice(0, 300)) },
-      );
-    }
-
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        'Anthropic returned a body that was not valid JSON.',
-        { provider: 'anthropic', cause: error },
-      );
-    }
+    const payload = await postMessages(apiKey, {
+      model,
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+      messages: toAnthropicMessages(messages),
+      ...(Array.isArray(tools) && tools.length > 0
+        ? {
+            tools: tools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              input_schema: tool.parameters,
+            })),
+          }
+        : {}),
+    });
 
     const blocks = Array.isArray(payload?.content) ? payload.content : [];
-
-    const text = blocks
-      .filter((block) => block?.type === 'text')
-      .map((block) => block.text)
-      .join('');
+    const text = textOf(blocks);
 
     const toolCalls = blocks
       .filter((block) => block?.type === 'tool_use' && block.name)

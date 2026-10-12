@@ -1,12 +1,7 @@
 'use strict';
 
-const config = require('../../../config');
-const {
-  ProviderError,
-  PROVIDER_ERROR_KINDS,
-  kindFromStatus,
-  kindFromTransportError,
-} = require('../providerError');
+const { ProviderError, PROVIDER_ERROR_KINDS } = require('../providerError');
+const { postJson, assertNoUpstreamError } = require('../vendorRequest');
 
 /**
  * The chat completions wire format, shared by OpenAI and OpenRouter.
@@ -124,70 +119,24 @@ async function runChatCompletion({
   tools,
   systemExtra,
 }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.ai.requestTimeoutMs);
+  const payload = await postJson({
+    endpoint,
+    label,
+    provider: label,
+    headers,
+    body: {
+      ...body,
+      messages: [
+        // Instructions stay in their own message, never concatenated with the
+        // untrusted content of the conversation.
+        { role: 'system', content: system, ...(systemExtra ?? {}) },
+        ...toVendorMessages(messages),
+      ],
+      tools: toVendorTools(tools),
+    },
+  });
 
-  let response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify({
-        ...body,
-        messages: [
-          // Instructions stay in their own message, never concatenated with the
-          // untrusted content of the conversation.
-          { role: 'system', content: system, ...(systemExtra ?? {}) },
-          ...toVendorMessages(messages),
-        ],
-        tools: toVendorTools(tools),
-      }),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    throw new ProviderError(
-      kindFromTransportError(error),
-      `The ${label} request could not be completed.`,
-      { provider: label, cause: error },
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  if (!response.ok) {
-    // The vendor body is read for the operator log but never returned to the
-    // client, since it can echo request content back.
-    const detail = await response.text().catch(() => '');
-    throw new ProviderError(
-      kindFromStatus(response.status),
-      `${label} responded with status ${response.status}.`,
-      { status: response.status, provider: label, cause: new Error(detail.slice(0, 300)) },
-    );
-  }
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw new ProviderError(
-      PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-      `${label} returned a body that was not valid JSON.`,
-      { provider: label, cause: error },
-    );
-  }
-
-  if (payload?.error) {
-    const status = Number(payload.error.code);
-    throw new ProviderError(
-      Number.isInteger(status) ? kindFromStatus(status) : PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-      `${label} reported an upstream failure.`,
-      {
-        status: Number.isInteger(status) ? status : undefined,
-        provider: label,
-        cause: new Error(String(payload.error.message ?? '').slice(0, 300)),
-      },
-    );
-  }
+  assertNoUpstreamError(payload, { label, provider: label });
 
   const message = payload?.choices?.[0]?.message;
   if (message === undefined || message === null) {
@@ -218,46 +167,14 @@ async function runChatCompletion({
  * @throws {ProviderError} Categorised so the fallback chain can act on it.
  */
 async function runEmbedding({ endpoint, label, headers, model, input }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.ai.requestTimeoutMs);
-
-  let response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify({ model, input }),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    throw new ProviderError(
-      kindFromTransportError(error),
-      `The ${label} embedding request could not be completed.`,
-      { provider: label, cause: error },
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new ProviderError(
-      kindFromStatus(response.status),
-      `${label} responded with status ${response.status}.`,
-      { status: response.status, provider: label, cause: new Error(detail.slice(0, 300)) },
-    );
-  }
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw new ProviderError(
-      PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-      `${label} returned a body that was not valid JSON.`,
-      { provider: label, cause: error },
-    );
-  }
+  const payload = await postJson({
+    endpoint,
+    label,
+    provider: label,
+    headers,
+    body: { model, input },
+    action: 'embedding request',
+  });
 
   const vector = payload?.data?.[0]?.embedding;
   if (!Array.isArray(vector) || vector.length === 0 || !vector.every(Number.isFinite)) {

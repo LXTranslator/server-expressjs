@@ -7,6 +7,8 @@ const {
   registerAccount,
 } = require('./helpers/testApp');
 const openrouter = require('../src/infrastructure/ai/providers/openrouter');
+const openai = require('../src/infrastructure/ai/providers/openai');
+const anthropic = require('../src/infrastructure/ai/providers/anthropic');
 const { getProvider, isKnownProvider } = require('../src/infrastructure/ai/providers');
 const { PROVIDER_ERROR_KINDS } = require('../src/infrastructure/ai/providerError');
 
@@ -212,6 +214,227 @@ describe('openrouter provider', () => {
 
       await expect(openrouter.translateBatch(call)).rejects.toMatchObject({
         message: expect.not.stringContaining('echoed request content'),
+      });
+    });
+  });
+});
+
+/*
+ * Every adapter that reaches a vendor.
+ *
+ * The error contract is what the fallback chain acts on, so each call is held
+ * to it: the category, the operator message, the status and the provider
+ * recorded on the error. The credential header each vendor expects is pinned
+ * too, since a request that lost it would fail only in production.
+ */
+describe('network adapters', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  const translateArgs = {
+    apiKey: 'sk_test',
+    model: 'any-model',
+    sourceLang: 'en_us',
+    targetLang: 'th_th',
+    texts: ['Hello'],
+  };
+  const chatArgs = {
+    apiKey: 'sk_test',
+    model: 'any-model',
+    system: 'Be brief.',
+    messages: [{ role: 'user', content: 'Hi' }],
+    tools: [{ name: 'stop', description: 'Finish.', parameters: { type: 'object' } }],
+  };
+  const embedArgs = { apiKey: 'sk_test', model: 'any-model', input: 'Hi' };
+
+  const bearer = { Authorization: 'Bearer sk_test' };
+  const anthropicHeaders = { 'x-api-key': 'sk_test', 'anthropic-version': '2023-06-01' };
+
+  const CALLS = [
+    {
+      name: 'openai.translateBatch',
+      run: () => openai.translateBatch(translateArgs),
+      url: 'https://api.openai.com/v1/chat/completions',
+      headers: bearer,
+      label: 'OpenAI',
+      provider: 'openai',
+      action: 'request',
+      success: { choices: [{ message: { content: '{"translations":["สวัสดี"]}' } }] },
+      result: ['สวัสดี'],
+      body: { model: 'any-model', response_format: { type: 'json_object' } },
+    },
+    {
+      name: 'openai.chat',
+      run: () => openai.chat(chatArgs),
+      url: 'https://api.openai.com/v1/chat/completions',
+      headers: bearer,
+      label: 'OpenAI',
+      provider: 'OpenAI',
+      action: 'request',
+      success: { choices: [{ message: { content: 'Hello' } }], usage: { total_tokens: 7 } },
+      result: { text: 'Hello', toolCalls: [], usage: { totalTokens: 7 } },
+      body: { model: 'any-model' },
+    },
+    {
+      name: 'openai.embed',
+      run: () => openai.embed(embedArgs),
+      url: 'https://api.openai.com/v1/embeddings',
+      headers: bearer,
+      label: 'OpenAI',
+      provider: 'OpenAI',
+      action: 'embedding request',
+      success: { data: [{ embedding: [0.5, 0.25] }] },
+      result: [0.5, 0.25],
+      body: { model: 'any-model', input: 'Hi' },
+    },
+    {
+      name: 'openrouter.translateBatch',
+      run: () => openrouter.translateBatch(translateArgs),
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      headers: { ...bearer, 'X-Title': 'LXTranslator' },
+      label: 'OpenRouter',
+      provider: 'openrouter',
+      action: 'request',
+      success: { choices: [{ message: { content: '["สวัสดี"]' } }] },
+      result: ['สวัสดี'],
+      body: { model: 'any-model' },
+    },
+    {
+      name: 'openrouter.chat',
+      run: () => openrouter.chat(chatArgs),
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      headers: { ...bearer, 'X-Title': 'LXTranslator' },
+      label: 'OpenRouter',
+      provider: 'OpenRouter',
+      action: 'request',
+      success: { choices: [{ message: { content: 'Hello' } }], usage: { total_tokens: 7 } },
+      result: { text: 'Hello', toolCalls: [], usage: { totalTokens: 7 } },
+      body: { model: 'any-model' },
+    },
+    {
+      name: 'openrouter.embed',
+      run: () => openrouter.embed(embedArgs),
+      url: 'https://openrouter.ai/api/v1/embeddings',
+      headers: { ...bearer, 'X-Title': 'LXTranslator' },
+      label: 'OpenRouter',
+      provider: 'OpenRouter',
+      action: 'embedding request',
+      success: { data: [{ embedding: [0.5, 0.25] }] },
+      result: [0.5, 0.25],
+      body: { model: 'any-model', input: 'Hi' },
+    },
+    {
+      name: 'anthropic.translateBatch',
+      run: () => anthropic.translateBatch(translateArgs),
+      url: 'https://api.anthropic.com/v1/messages',
+      headers: anthropicHeaders,
+      label: 'Anthropic',
+      provider: 'anthropic',
+      action: 'request',
+      success: { content: [{ type: 'text', text: '["สวัสดี"]' }] },
+      result: ['สวัสดี'],
+      body: { model: 'any-model', max_tokens: 8192 },
+    },
+    {
+      name: 'anthropic.chat',
+      run: () => anthropic.chat(chatArgs),
+      url: 'https://api.anthropic.com/v1/messages',
+      headers: anthropicHeaders,
+      label: 'Anthropic',
+      provider: 'anthropic',
+      action: 'request',
+      success: {
+        content: [
+          { type: 'text', text: 'Hello' },
+          { type: 'tool_use', id: 'call_1', name: 'stop', input: { summary: 'done' } },
+        ],
+        usage: { input_tokens: 5, output_tokens: 2 },
+      },
+      result: {
+        text: 'Hello',
+        toolCalls: [{ id: 'call_1', name: 'stop', arguments: { summary: 'done' } }],
+        usage: { totalTokens: 7 },
+      },
+      body: { model: 'any-model', max_tokens: 8192 },
+    },
+  ];
+
+  describe.each(CALLS)('$name', (call) => {
+    it('posts JSON to its constant endpoint with the credential in a header', async () => {
+      let seen = null;
+      global.fetch = async (url, options) => {
+        seen = { url, options };
+        return stubResponse({ body: call.success });
+      };
+
+      await expect(call.run()).resolves.toEqual(call.result);
+
+      expect(seen.url).toBe(call.url);
+      expect(seen.options.method).toBe('POST');
+      expect(seen.options.signal).toBeInstanceOf(AbortSignal);
+      expect(seen.options.headers).toEqual({
+        'Content-Type': 'application/json',
+        ...call.headers,
+      });
+      expect(JSON.parse(seen.options.body)).toMatchObject(call.body);
+    });
+
+    it('categorises a transport failure', async () => {
+      global.fetch = async () => {
+        throw new TypeError('fetch failed');
+      };
+
+      await expect(call.run()).rejects.toMatchObject({
+        name: 'ProviderError',
+        kind: PROVIDER_ERROR_KINDS.NETWORK,
+        message: `The ${call.label} ${call.action} could not be completed.`,
+        status: null,
+        provider: call.provider,
+      });
+    });
+
+    it('categorises a deadline as a timeout', async () => {
+      global.fetch = async () => {
+        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      };
+
+      await expect(call.run()).rejects.toMatchObject({ kind: PROVIDER_ERROR_KINDS.TIMEOUT });
+    });
+
+    it('maps a status and keeps the vendor body out of the message', async () => {
+      global.fetch = async () => stubResponse({ status: 503, body: { error: 'echoed' } });
+
+      const error = await call.run().catch((caught) => caught);
+
+      expect(error).toMatchObject({
+        name: 'ProviderError',
+        kind: PROVIDER_ERROR_KINDS.SERVER,
+        message: `${call.label} responded with status 503.`,
+        status: 503,
+        provider: call.provider,
+      });
+      expect(error.cause.message).toBe('{"error":"echoed"}');
+    });
+
+    it('rejects a body that is not JSON', async () => {
+      global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token');
+        },
+        text: async () => 'not json',
+      });
+
+      await expect(call.run()).rejects.toMatchObject({
+        name: 'ProviderError',
+        kind: PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
+        message: `${call.label} returned a body that was not valid JSON.`,
+        status: null,
+        provider: call.provider,
       });
     });
   });

@@ -1,14 +1,8 @@
 'use strict';
 
-const config = require('../../../config');
-const { buildSystemPrompt, buildUserPrompt, parseTranslationReply } = require('../prompt');
+const { buildSystemPrompt, buildUserPrompt } = require('../prompt');
+const { postJson, assertNoUpstreamError, readTranslations } = require('../vendorRequest');
 const { runChatCompletion, runEmbedding } = require('./openaiChat');
-const {
-  ProviderError,
-  PROVIDER_ERROR_KINDS,
-  kindFromStatus,
-  kindFromTransportError,
-} = require('../providerError');
 
 /**
  * OpenRouter adapter.
@@ -33,6 +27,9 @@ const CLIENT_TITLE = 'LXTranslator';
 
 /** Embeddings live on their own path. Also a constant, for the same reason. */
 const EMBEDDING_ENDPOINT = 'https://openrouter.ai/api/v1/embeddings';
+
+/** How this adapter is named on an error. */
+const VENDOR = Object.freeze({ label: 'OpenRouter', provider: 'openrouter' });
 
 module.exports = {
   name: 'openrouter',
@@ -75,102 +72,27 @@ module.exports = {
    * @throws {ProviderError} Categorised so the fallback chain can act on it.
    */
   async translateBatch({ apiKey, model, sourceLang, targetLang, texts }) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.ai.requestTimeoutMs);
+    const payload = await postJson({
+      ...VENDOR,
+      endpoint: ENDPOINT,
+      headers: { Authorization: `Bearer ${apiKey}`, 'X-Title': CLIENT_TITLE },
+      body: {
+        model,
+        messages: [
+          { role: 'system', content: buildSystemPrompt(sourceLang, targetLang) },
+          { role: 'user', content: buildUserPrompt(texts) },
+        ],
+        // No response_format here, unlike the OpenAI adapter. The models
+        // reachable through OpenRouter do not all support it, and a model
+        // that rejects the field would fail for a reason unrelated to the
+        // credential and burn the next key in the chain. The reply contract
+        // is enforced by readTranslations instead, which is the check that
+        // actually protects the database.
+      },
+    });
 
-    let response;
-    try {
-      response = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: {
-          // The credential is only ever placed in a header, never in a URL or
-          // a log line.
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'X-Title': CLIENT_TITLE,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: buildSystemPrompt(sourceLang, targetLang) },
-            { role: 'user', content: buildUserPrompt(texts) },
-          ],
-          // No response_format here, unlike the OpenAI adapter. The models
-          // reachable through OpenRouter do not all support it, and a model
-          // that rejects the field would fail for a reason unrelated to the
-          // credential and burn the next key in the chain. The reply contract
-          // is enforced by parseTranslationReply instead, which is the check
-          // that actually protects the database.
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw new ProviderError(
-        kindFromTransportError(error),
-        'The OpenRouter request could not be completed.',
-        { provider: 'openrouter', cause: error },
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!response.ok) {
-      // The vendor body is read for the operator log but never returned to the
-      // client, since it can echo request content back.
-      const detail = await response.text().catch(() => '');
-      throw new ProviderError(
-        kindFromStatus(response.status),
-        `OpenRouter responded with status ${response.status}.`,
-        {
-          status: response.status,
-          provider: 'openrouter',
-          cause: new Error(detail.slice(0, 300)),
-        },
-      );
-    }
-
-    let payload;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        'OpenRouter returned a body that was not valid JSON.',
-        { provider: 'openrouter', cause: error },
-      );
-    }
-
-    /*
-     * OpenRouter reports an upstream failure two ways: as an HTTP status, and
-     * as an error object inside a 200 body when the broker itself reached the
-     * vendor but the vendor refused. The second form has to be mapped onto the
-     * same categories, or a vendor side rate limit would look like a malformed
-     * reply and the fallback chain would stop instead of trying the next key.
-     */
-    if (payload?.error) {
-      const status = Number(payload.error.code);
-      throw new ProviderError(
-        Number.isInteger(status) ? kindFromStatus(status) : PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        'OpenRouter reported an upstream failure.',
-        {
-          status: Number.isInteger(status) ? status : undefined,
-          provider: 'openrouter',
-          cause: new Error(String(payload.error.message ?? '').slice(0, 300)),
-        },
-      );
-    }
-
-    const content = payload?.choices?.[0]?.message?.content;
-
-    try {
-      return parseTranslationReply(content, texts.length);
-    } catch (error) {
-      throw new ProviderError(
-        PROVIDER_ERROR_KINDS.INVALID_RESPONSE,
-        `OpenRouter returned an unusable reply: ${error.message}`,
-        { provider: 'openrouter', cause: error },
-      );
-    }
+    assertNoUpstreamError(payload, VENDOR);
+    return readTranslations(payload?.choices?.[0]?.message?.content, texts.length, VENDOR);
   },
 
   /**
