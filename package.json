@@ -20,23 +20,35 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.7.0",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.3.0",
-    "nodemailer": "^10.0.1",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.5.0",
     "sequelize": "^6.37.8",
     "sqlite3": "^6.0.1",
-    "zod": "^4.5.4"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "jest": "^30.5.1",
-    "supertest": "^7.2.2"
+    "@swc/core": "^1.16.22",
+    "@swc/jest": "^0.2.39",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   },
   "optionalDependencies": {
-    "pg": "^8.23.0",
+    "pg": "^8.23.1",
     "pg-hstore": "^2.3.4"
   },
   "overrides": {
@@ -44,6 +56,9 @@
     "tar": "^7.5.22",
     "uuid": "^11.1.1",
     "qs": "^6.16.0",
-    "js-yaml": "^5.4.1"
+    "js-yaml": "^5.4.1",
+    "glob": "^14.0.5",
+    "minimatch": "^11.0.8",
+    "deepmerge": "4.1.2"
   }
 }

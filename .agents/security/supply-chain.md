@@ -14,16 +14,27 @@ npm audit          # found 0 vulnerabilities
 npm outdated       # empty
 ```
 
-Three transitive packages are held at fixed versions through `overrides` in
+Transitive packages are held at fixed versions through `overrides` in
 `package.json` because their parents ship outdated ranges:
 
 ```json
 "overrides": {
-  "brace-expansion": "^5.0.8",
+  "brace-expansion": "^5.0.9",
   "tar": "^7.5.22",
-  "uuid": "^11.1.1"
+  "uuid": "^11.1.1",
+  "qs": "^6.16.0",
+  "js-yaml": "^5.4.1",
+  "glob": "^14.0.5",
+  "minimatch": "^11.0.8",
+  "deepmerge": "4.1.2"
 }
 ```
+
+`glob`, `minimatch` and `deepmerge` reach the tree only through Jest. Jest 30.5.2
+still asks for `glob` and `minimatch` ranges with open advisories, and every
+`deepmerge` from 4.2.0 to 4.3.1, the latest, carries a prototype poisoning
+advisory. 4.1.2 predates it and offers the two calls `jest-config` makes,
+`deepmerge(a, b)` and `deepmerge.all([...])`.
 
 Removing these reintroduces known advisories, including a critical arbitrary
 file write in `tar`. Do not drop them without confirming the parent packages
