@@ -117,3 +117,26 @@ loads.
 Checked: `npm run build` with zero errors, `npm run typecheck` with zero errors, 600 of
 600 tests across 19 suites, `npm audit` clean, `node dist/index.js` boots and translates
 an upload on the compiled worker, and `tsx src/index.ts` boots.
+
+### Task 4 — release/0.26.0
+
+Version 0.26.0, a minor because a deployment now needs a build step even though the API
+is unchanged. `package.json` and both version fields of `package-lock.json`,
+`wiki/logs/0/26/0/CHANGELOG.md`, its `logs-index.md` row, and the stack and shared
+pieces in `.agents/memory/state/repository-state.md`.
+
+Server chain complete: four tasks, four branches, `npm run build` and `npm run
+typecheck` with zero errors, 600 tests passing across 19 suites, `npm audit` clean.
+
+## Discovery findings, awaiting the owner's decision
+
+Proposed rather than written, per the discovery protocol:
+
+1. `.agents/rules/repository.md` still says "CommonJS with `'use strict'`" and lists the
+   module layout as `.js` files. It should say strict TypeScript in ES module syntax,
+   compiled to CommonJS, with the `.ts` names, and add that `npm test` type checks first.
+2. Seventeen of the `.agents/security/` policies point at source files by their `.js`
+   names, such as `src/middleware/authenticate.js`. Every one now ends in `.ts`. The
+   change is mechanical but those are instruction files.
+3. `.gitignore` still has no `.agents/plans/` line (raised before, at 0.25.1). The
+   working plan was kept out of every commit through `.git/info/exclude` again.

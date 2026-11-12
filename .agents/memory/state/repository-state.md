@@ -7,15 +7,17 @@ description: Current known state of server-expressjs after adopting the shared i
 
 ## What this is
 
-`lxtranslator_server`, version 0.25.1. The Express backend for LXTranslator, serving the
+`lxtranslator_server`, version 0.26.0. The Express backend for LXTranslator, serving the
 API that `LXTranslator/client-reactjs` consumes.
 
 ## Stack
 
-Node.js 20 or newer, strict TypeScript compiled to CommonJS, Express, Sequelize. PostgreSQL when `PROD=true`, SQLite
-otherwise. Translation work runs on worker threads. Jest and Supertest for tests, against
-an in memory database with only the AI provider substituted. Deployed as a multi stage
-Docker image running as an unprivileged user under `dumb-init`.
+Node.js 20 or newer, strict TypeScript compiled to CommonJS in `dist/`, Express,
+Sequelize. PostgreSQL when `PROD=true`, SQLite otherwise. Translation work runs on
+worker threads. Jest and Supertest for tests, run through `@swc/jest` after `tsc` type
+checks them, against an in memory database with only the AI provider substituted.
+Deployed as a multi stage Docker image running as an unprivileged user under
+`dumb-init`.
 
 ## Instruction system
 
@@ -53,7 +55,7 @@ directly would bypass the factor silently — that is the mistake to watch for.
 Five tables carry it: `account_mfa`, `account_recovery_codes`, `mfa_challenges`,
 `oauth_states`, `account_identities`.
 
-## Shared pieces, as of 0.25.1
+## Shared pieces, as of 0.26.0
 
 Written once and meant to be reused rather than copied again:
 
@@ -65,6 +67,9 @@ Written once and meant to be reused rather than copied again:
 * `src/infrastructure/database/models/columns.ts` for a key, a reference or
   `created_at`.
 * `src/modules/auth/auth.http.ts` for any route that starts a session.
+* `defineTool` in `src/modules/chat/tools/shared.ts` for a new assistant tool, so its
+  handler is typed from its argument schema.
+* `src/infrastructure/ai/types.ts` for the shapes every AI adapter speaks.
 
 ## The schema constraint that governs every future change here
 
