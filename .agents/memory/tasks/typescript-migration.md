@@ -31,10 +31,10 @@ checklist: latest dependencies and a clean audit, a strict `tsconfig.json` with
 
 | # | Title | Scope | Repository | Branch | PR |
 |---|---|---|---|---|---|
-| 1 | Task record | This file and its index row | server | `plan/typescript-migration` | |
-| 2 | Latest dependencies | Every dependency on its latest version, TypeScript tooling and `@types`, audit | server | `build/dependencies` | |
-| 3 | TypeScript conversion | `tsconfig.json`, `src` and `tests` to `.ts`, scripts, Jest, Dockerfile, docs | server | `refactor/typescript` | |
-| 4 | Release | Version, changelog, indexes, close this record | server | `release/0.26.0` | |
+| 1 | Task record | This file and its index row | server | `plan/typescript-migration` | #42 |
+| 2 | Latest dependencies | Every dependency on its latest version, TypeScript tooling and `@types`, audit | server | `build/dependencies` | #43 |
+| 3 | TypeScript conversion | `tsconfig.json`, `src` and `tests` to `.ts`, scripts, Jest, Dockerfile, docs | server | `refactor/typescript` | #44 |
+| 4 | Release | Version, changelog, indexes, close this record | server | `release/0.26.0` | #45 |
 
 Task 1 branches from `master`; task `k` branches from task `k-1`.
 
