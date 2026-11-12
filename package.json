@@ -5,13 +5,18 @@
   "description": "LXTranslator translation management backend built on Express.js.",
   "license": "SEE LICENSE IN LICENSE",
   "author": "Jetsada Wijit",
-  "main": "src/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "build": "tsc",
+    "prestart": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "pretest": "npm run typecheck",
     "test": "jest --runInBand --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --runInBand --coverage --forceExit",

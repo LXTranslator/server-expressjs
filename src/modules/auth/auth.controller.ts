@@ -1,0 +1,239 @@
+import asyncHandler from '../../core/asyncHandler';
+import { validated } from '../../middleware/validate';
+import * as authService from './auth.service';
+import * as sessionService from './session.service';
+import * as apiTokenService from './apiToken.service';
+import * as usageService from '../usage/usage.service';
+import { clientContext, sessionData, sendSignIn } from './auth.http';
+import type { z } from 'zod';
+import type * as schemas from './auth.schemas';
+
+/**
+ * HTTP handlers for the authentication module.
+ *
+ * Controllers stay thin: they translate between HTTP and the service layer and
+ * nothing more. All rules live in the service, which keeps them testable
+ * without a request object and reusable from other entry points.
+ */
+
+/**
+ * GET /auth/availability
+ * Reports whether a user id or email may still be registered.
+ */
+const availability = asyncHandler(async (req, res) => {
+  const query = validated<z.infer<typeof schemas.availabilitySchema>>(req, 'query');
+  const result = await authService.checkAvailability({
+    userId: query.user_id,
+    email: query.email,
+  });
+  res.json({ data: result });
+});
+
+/**
+ * POST /auth/register
+ * Creates a personal namespace and returns a session.
+ */
+const register = asyncHandler(async (req, res) => {
+  const session = await authService.register(req.body, clientContext(req));
+  res.status(201).json({ data: sessionData(session) });
+});
+
+/**
+ * POST /auth/login
+ * Exchanges credentials for a session token, or for a second factor challenge.
+ */
+const login = asyncHandler(async (req, res) => {
+  const result = await authService.login(req.body, clientContext(req));
+  sendSignIn(res, result);
+});
+
+/**
+ * POST /auth/forgot-password
+ * Starts the reset flow. The response never reveals whether the address exists.
+ */
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { token } = await authService.requestPasswordReset(req.body);
+  res.json({
+    data: {
+      message:
+        'If that address has an account, a reset link is on its way. The link expires in 10 minutes.',
+      // Present outside production only, so the flow can be completed locally
+      // and in the automated tests without an inbox.
+      ...(token === null ? {} : { development_token: token }),
+    },
+  });
+});
+
+/**
+ * POST /auth/reset-password
+ * Completes the reset flow using a single use token.
+ */
+const resetPassword = asyncHandler(async (req, res) => {
+  await authService.resetPassword(req.body);
+  res.json({
+    data: { message: 'Your password has been updated. Sign in with your new password.' },
+  });
+});
+
+/**
+ * GET /auth/me
+ * Returns the account behind the current session.
+ */
+const me = asyncHandler(async (req, res) => {
+  res.json({ data: { account: req.account.toPublicJson() } });
+});
+
+/**
+ * POST /auth/logout
+ * Ends the session this request was made with.
+ *
+ * A real end, not a client side forget. Before sessions were recorded, signing
+ * out could only drop the token locally and it stayed valid for the rest of its
+ * lifetime anywhere else it had been copied.
+ */
+const logout = asyncHandler(async (req, res) => {
+  await sessionService.revokeSession({
+    accountId: req.account.id,
+    sessionId: req.session.id,
+  });
+  res.status(204).send();
+});
+
+/**
+ * GET /auth/sessions
+ * Lists where this account is currently signed in.
+ */
+const listSessions = asyncHandler(async (req, res) => {
+  const sessions = await sessionService.listSessions({
+    accountId: req.account.id,
+    kind: 'SESSION',
+  });
+
+  // Saying which row is the caller's own is what makes the list usable: the
+  // one you are reading it from is the one you must not end by accident.
+  res.json({
+    data: {
+      sessions: sessions.map((session) => ({
+        ...session,
+        current: session.id === req.session.id,
+      })),
+    },
+  });
+});
+
+/**
+ * DELETE /auth/sessions/:sessionId
+ * Ends one session, which may be the current one.
+ */
+const revokeSession = asyncHandler(async (req, res) => {
+  await sessionService.revokeSession({
+    accountId: req.account.id,
+    sessionId: req.params.sessionId,
+    kind: 'SESSION',
+  });
+  res.status(204).send();
+});
+
+/**
+ * POST /auth/sessions/revoke_others
+ * Ends every other session, keeping the one asking.
+ */
+const revokeOtherSessions = asyncHandler(async (req, res) => {
+  const revoked = await sessionService.revokeAll({
+    accountId: req.account.id,
+    exceptId: req.session.id,
+    kind: 'SESSION',
+  });
+  res.json({ data: { revoked } });
+});
+
+/**
+ * POST /auth/api_tokens
+ * Creates a machine credential and returns it exactly once.
+ */
+const createApiToken = asyncHandler(async (req, res) => {
+  const { token, record } = await apiTokenService.createApiToken({
+    account: req.account,
+    name: req.body.name,
+    expiresInDays: req.body.expires_in_days,
+  });
+
+  res.status(201).json({
+    data: {
+      api_token: record.toPublicJson(),
+      // The only time this string exists outside the caller's own machine.
+      // Nothing stores it, so nothing can show it again.
+      token,
+      warning: 'Copy this token now. It cannot be shown again.',
+    },
+  });
+});
+
+/**
+ * GET /auth/api_tokens
+ * Lists this account's machine credentials, without any token material.
+ */
+const listApiTokens = asyncHandler(async (req, res) => {
+  const tokens = await apiTokenService.listApiTokens(req.account.id);
+  res.json({ data: { api_tokens: tokens } });
+});
+
+/**
+ * DELETE /auth/api_tokens/:tokenId
+ * Revokes one, which stops working on the next request rather than at expiry.
+ */
+const revokeApiToken = asyncHandler(async (req, res) => {
+  await apiTokenService.revokeApiToken({
+    accountId: req.account.id,
+    tokenId: req.params.tokenId,
+  });
+  res.status(204).send();
+});
+
+/**
+ * GET /auth/usage
+ * What has been done on this account, newest first.
+ */
+const listUsage = asyncHandler(async (req, res) => {
+  const query = validated<z.infer<typeof schemas.usageQuerySchema>>(req, 'query');
+  const usage = await usageService.listUsage({
+    // Always the caller's own. A usage row names a path that may itself carry
+    // another account's identifiers, so this is never queried by anything a
+    // caller supplied on its own.
+    accountId: req.account.id,
+    sessionId: query.session_id,
+    limit: query.limit,
+  });
+  res.json({ data: { usage } });
+});
+
+/**
+ * GET /auth/usage/summary
+ * Totals by credential, which is what makes an unfamiliar one visible.
+ */
+const usageSummary = asyncHandler(async (req, res) => {
+  const query = validated<z.infer<typeof schemas.usageSummaryQuerySchema>>(req, 'query');
+  const summary = await usageService.summariseUsage({
+    accountId: req.account.id,
+    days: query.days,
+  });
+  res.json({ data: summary });
+});
+
+export {
+  availability,
+  register,
+  login,
+  forgotPassword,
+  resetPassword,
+  me,
+  logout,
+  listSessions,
+  revokeSession,
+  revokeOtherSessions,
+  createApiToken,
+  listApiTokens,
+  revokeApiToken,
+  listUsage,
+  usageSummary,
+};

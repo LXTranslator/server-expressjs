@@ -16,10 +16,13 @@ tmp/
 *.sqlite3
 *.db
 
-# Development only material.
+# Development only material. `tsconfig.json` stays in the context because the
+# build stage compiles with it.
 tests/
 coverage/
+dist/
 jest.config.js
+tsconfig.test.json
 .git/
 .gitignore
 .gitattributes

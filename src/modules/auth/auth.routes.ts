@@ -1,0 +1,156 @@
+import express from 'express';
+import { validate } from '../../middleware/validate';
+import { authenticate } from '../../middleware/authenticate';
+import { authLimiter, availabilityLimiter } from '../../middleware/rateLimit';
+import { ForbiddenError } from '../../core/errors';
+import * as controller from './auth.controller';
+import * as schemas from './auth.schemas';
+import * as mfaController from './mfa.controller';
+import * as mfaSchemas from './mfa.schemas';
+import mfaRoutes from './mfa.routes';
+import oauthRoutes from './oauth.routes';
+import type { NextFunction, Request, Response } from 'express';
+
+const router = express.Router();
+
+/**
+ * Refuses a request made with an API token rather than a signed in session.
+ *
+ * Guards the endpoints that manage credentials themselves. A token that can
+ * mint and revoke tokens is a token that can replace itself, which would make
+ * revoking the original pointless.
+ *
+ * @param {Request} req Request.
+ * @param {Response} res Response.
+ * @param {Function} next Express next handler.
+ * @returns {void}
+ */
+function requireSession(req: Request, res: Response, next: NextFunction): void {
+  if (req.session?.kind === 'API') {
+    next(new ForbiddenError('Sign in to manage API tokens. A token cannot manage tokens.'));
+    return;
+  }
+  next();
+}
+
+/**
+ * Authentication routes.
+ *
+ * Every credential endpoint carries a rate limiter, and every payload is
+ * validated against a strict schema before a handler runs.
+ */
+
+router.get(
+  '/availability',
+  availabilityLimiter,
+  validate(schemas.availabilitySchema, 'query'),
+  controller.availability,
+);
+
+router.post('/register', authLimiter, validate(schemas.registerSchema), controller.register);
+
+router.post('/login', authLimiter, validate(schemas.loginSchema), controller.login);
+
+/*
+ * The second half of a sign in that answered a password but not yet a second
+ * factor. Unauthenticated, because the caller holds a challenge and not a
+ * session: the challenge is the credential, and it can do nothing else.
+ */
+router.post(
+  '/login/mfa',
+  authLimiter,
+  validate(mfaSchemas.challengeSchema),
+  mfaController.completeChallenge,
+);
+
+// Mounted here rather than in routes/index.js so that /auth stays one mount
+// point and requireSession above can be handed straight to it.
+router.use('/mfa', mfaRoutes(requireSession));
+router.use('/oauth', oauthRoutes(requireSession));
+
+router.post(
+  '/password/forgot',
+  authLimiter,
+  validate(schemas.forgotPasswordSchema),
+  controller.forgotPassword,
+);
+
+router.post(
+  '/password/reset',
+  authLimiter,
+  validate(schemas.resetPasswordSchema),
+  controller.resetPassword,
+);
+
+router.get('/me', authenticate, controller.me);
+
+/*
+ * Sessions.
+ *
+ * Where this account is signed in, and how to end any of it. Always the
+ * caller's own: a session identifier is a UUID somebody could hold from
+ * anywhere, so every one of these filters by the authenticated account as well
+ * and answers 404 for a row belonging to somebody else.
+ */
+
+router.post('/logout', authenticate, controller.logout);
+
+router.get('/sessions', authenticate, controller.listSessions);
+
+router.post('/sessions/revoke_others', authenticate, controller.revokeOtherSessions);
+
+router.delete('/sessions/:sessionId', authenticate, controller.revokeSession);
+
+/*
+ * API tokens.
+ *
+ * The credential a machine uses. Creating one is rate limited like any other
+ * credential endpoint, because a token is a way into the account that outlives
+ * the session that made it.
+ *
+ * Creating a token requires an ordinary session, so a token cannot mint another
+ * token. Otherwise one leaked credential could quietly replace itself forever
+ * and revoking the original would achieve nothing.
+ */
+
+router.post(
+  '/api_tokens',
+  authenticate,
+  requireSession,
+  authLimiter,
+  validate(schemas.createApiTokenSchema),
+  controller.createApiToken,
+);
+
+router.get('/api_tokens', authenticate, controller.listApiTokens);
+
+router.delete(
+  '/api_tokens/:tokenId',
+  authenticate,
+  requireSession,
+  controller.revokeApiToken,
+);
+
+/*
+ * API usage.
+ *
+ * What has been done on this account, and by which credential. Readable with
+ * either kind of credential: a script checking its own footprint is a
+ * legitimate use, and nothing here is a secret from the account holder.
+ */
+
+router.get(
+  '/usage',
+  authenticate,
+  validate(schemas.usageQuerySchema, 'query'),
+  controller.listUsage,
+);
+
+router.get(
+  '/usage/summary',
+  authenticate,
+  validate(schemas.usageSummaryQuerySchema, 'query'),
+  controller.usageSummary,
+);
+
+export default router;

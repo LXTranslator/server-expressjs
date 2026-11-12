@@ -24,9 +24,11 @@ To run the web interface against it, clone `LXTranslator/client-reactjs` and run
 ## Commands
 
 ```bash
-npm start               # http://localhost:4000
-npm run dev             # same, restarting on change
-npm test                # full Jest suite
+npm start               # compile to dist/, then serve http://localhost:4000
+npm run dev             # run the TypeScript sources with tsx, restarting on change
+npm run build           # compile src/ into dist/ with tsc
+npm run typecheck       # type check src/ and tests/ without emitting
+npm test                # type check, then the full Jest suite
 npm run test:watch      # watch mode
 npm run test:coverage   # with coverage
 npm run audit:security  # npm audit, fails at high severity
@@ -41,7 +43,7 @@ working default. The full variable list and the `PROD` switch that governs them 
 
 ## Project layout
 
-`src/index.js` is the process entry point. It connects the database, applies the schema,
+`src/index.ts` is the process entry point. It connects the database, applies the schema,
 starts the worker pool, and only then accepts traffic — failing any earlier step exits
 rather than serving requests from a half configured process.
 
@@ -61,8 +63,11 @@ free of Express. The reasoning is in
 
 ## Tests
 
-Jest with Supertest, configured in `jest.config.js`. The suite runs against an isolated in
-memory SQLite database so it needs no configuration and no network. `tests/helpers/testApp.js`
+Jest with Supertest, configured in `jest.config.js`. The tests are TypeScript, and Jest
+runs them and the sources they import through `@swc/jest`, which strips the types without
+checking them; `npm test` runs `tsc -p tsconfig.test.json` first, so a type error still
+fails the suite. The suite runs against an isolated in
+memory SQLite database so it needs no configuration and no network. `tests/helpers/testApp.ts`
 builds the **real** application; only the AI provider is substituted, by the offline mock,
 so the tests exercise the production code path.
 
