@@ -138,5 +138,5 @@ Proposed rather than written, per the discovery protocol:
 2. Seventeen of the `.agents/security/` policies point at source files by their `.js`
    names, such as `src/middleware/authenticate.js`. Every one now ends in `.ts`. The
    change is mechanical but those are instruction files.
-3. `.gitignore` still has no `.agents/plans/` line (raised before, at 0.25.1). The
-   working plan was kept out of every commit through `.git/info/exclude` again.
+3. `.gitignore` had no `.agents/plans/` line (raised before, at 0.25.1). **Applied** at
+   the owner's request on 2026-11-12, in this release.

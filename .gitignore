@@ -31,6 +31,9 @@ build/
 *.log
 npm-debug.log*
 
+# The plan creator's working plan. Local to one run, never committed.
+.agents/plans/
+
 # Editor and OS noise
 .DS_Store
 Thumbs.db
