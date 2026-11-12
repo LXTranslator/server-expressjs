@@ -31,10 +31,10 @@ checklist: latest dependencies and a clean audit, a strict `tsconfig.json` with
 
 | # | Title | Scope | Repository | Branch | PR |
 |---|---|---|---|---|---|
-| 1 | Task record | This file and its index row | server | `plan/typescript-migration` | |
-| 2 | Latest dependencies | Every dependency on its latest version, TypeScript tooling and `@types`, audit | server | `build/dependencies` | |
-| 3 | TypeScript conversion | `tsconfig.json`, `src` and `tests` to `.ts`, scripts, Jest, Dockerfile, docs | server | `refactor/typescript` | |
-| 4 | Release | Version, changelog, indexes, close this record | server | `release/0.26.0` | |
+| 1 | Task record | This file and its index row | server | `plan/typescript-migration` | #42 |
+| 2 | Latest dependencies | Every dependency on its latest version, TypeScript tooling and `@types`, audit | server | `build/dependencies` | #43 |
+| 3 | TypeScript conversion | `tsconfig.json`, `src` and `tests` to `.ts`, scripts, Jest, Dockerfile, docs | server | `refactor/typescript` | #44 |
+| 4 | Release | Version, changelog, indexes, close this record | server | `release/0.26.0` | #45 |
 
 Task 1 branches from `master`; task `k` branches from task `k-1`.
 
@@ -117,3 +117,26 @@ loads.
 Checked: `npm run build` with zero errors, `npm run typecheck` with zero errors, 600 of
 600 tests across 19 suites, `npm audit` clean, `node dist/index.js` boots and translates
 an upload on the compiled worker, and `tsx src/index.ts` boots.
+
+### Task 4 — release/0.26.0
+
+Version 0.26.0, a minor because a deployment now needs a build step even though the API
+is unchanged. `package.json` and both version fields of `package-lock.json`,
+`wiki/logs/0/26/0/CHANGELOG.md`, its `logs-index.md` row, and the stack and shared
+pieces in `.agents/memory/state/repository-state.md`.
+
+Server chain complete: four tasks, four branches, `npm run build` and `npm run
+typecheck` with zero errors, 600 tests passing across 19 suites, `npm audit` clean.
+
+## Discovery findings, awaiting the owner's decision
+
+Proposed rather than written, per the discovery protocol:
+
+1. `.agents/rules/repository.md` still says "CommonJS with `'use strict'`" and lists the
+   module layout as `.js` files. It should say strict TypeScript in ES module syntax,
+   compiled to CommonJS, with the `.ts` names, and add that `npm test` type checks first.
+2. Seventeen of the `.agents/security/` policies point at source files by their `.js`
+   names, such as `src/middleware/authenticate.js`. Every one now ends in `.ts`. The
+   change is mechanical but those are instruction files.
+3. `.gitignore` had no `.agents/plans/` line (raised before, at 0.25.1). **Applied** at
+   the owner's request on 2026-11-12, in this release.
