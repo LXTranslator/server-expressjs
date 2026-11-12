@@ -43,3 +43,33 @@ Baseline before any task: 600 tests passing across 19 suites, `npm audit` clean.
 ### Task 1 — plan/typescript-migration
 
 This record and its row in `.agents/index/memory-index.md`.
+
+### Task 2 — build/dependencies
+
+Every direct dependency moved to its latest version: `dotenv` 18.0.10 (a major, and the
+only one), `express` 5.3.0, `express-rate-limit` 8.7.4, `multer` 2.5.0, `nodemailer`
+10.5.0, `zod` 4.6.7, `pg` 8.23.1, `jest` 30.5.2, `supertest` 7.3.2. The rest were already
+current. `dotenv` 18 keeps `config({ quiet: true })`, and the server boots and answers
+`/api/v1/health` on it.
+
+Added as devDependencies: `typescript` 7.0.2, `tsx`, `@types/node`, `@types/express`,
+`@types/cors`, `@types/jsonwebtoken`, `@types/multer`, `@types/nodemailer`,
+`@types/supertest` and `@types/jest`. `bcryptjs` and `sqlite3` ship their own types, so
+their `@types` packages are deprecated stubs and were left out.
+
+**`ts-jest` cannot be used.** TypeScript 7 is the native compiler and no longer exposes the
+JavaScript compiler API, and `ts-jest` declares `typescript >=4.3 <7`. Jest therefore
+transpiles through `@swc/jest` and `@swc/core`, and type checking is `tsc`'s job: task 3
+runs it over `src` and `tests` alike.
+
+`npm audit` after the updates: 22 advisories. `npm audit fix` cleared `body-parser`,
+`qs` and `undici` (through `node-gyp`) inside the declared ranges. The remaining 19 all
+came from Jest's own tree and are pinned through `overrides`, recorded in
+`.agents/security/supply-chain.md`. `npm audit` reports 0 vulnerabilities, and
+`npm run test:coverage` exercises the overridden `glob` and `test-exclude` path.
+
+`nodemailer` 10.5.0 was checked directly as before: `createTransport` with the
+`{host, port, secure, auth}` shape still returns `sendMail`, and a `jsonTransport` send
+delivers every field.
+
+Server suite: 600 passing across 19 suites, unchanged.
