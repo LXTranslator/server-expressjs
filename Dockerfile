@@ -2,9 +2,11 @@
 
 # LXTranslator server image.
 #
-# Multi stage so the runtime layer carries no build toolchain. The image runs as
-# an unprivileged user and ships no secrets: every production value arrives from
-# the environment at run time. See wiki/environment.md.
+# Multi stage so the runtime layer carries no build toolchain and no compiler:
+# the TypeScript sources are compiled in their own stage and only `dist/`
+# ships. The image runs as an unprivileged user and ships no secrets: every
+# production value arrives from the environment at run time. See
+# wiki/environment.md.
 
 # Pinned to a digest tagged release rather than a floating tag, so a rebuild
 # cannot silently pull a different base.
@@ -35,6 +37,21 @@ RUN npm ci --omit=dev --ignore-scripts \
   && npm cache clean --force
 
 
+FROM node:22-bookworm-slim AS build
+
+WORKDIR /app
+
+# The compiler and the type packages are dev dependencies, so this stage
+# installs everything, compiles `src/` into `dist/`, and is then thrown away.
+# Nothing from it but the compiled output reaches the runtime layer.
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+
 FROM node:22-bookworm-slim AS runtime
 
 # Non root by default. The node image ships an unprivileged `node` user, so no
@@ -55,7 +72,7 @@ RUN apt-get update \
 
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node package.json ./
-COPY --chown=node:node src ./src
+COPY --from=build --chown=node:node /app/dist ./dist
 
 # Writable locations for the SQLite file and uploaded artefacts. In production
 # these should be mounted volumes rather than image layers.
@@ -71,4 +88,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "src/index.js"]
+CMD ["node", "dist/index.js"]

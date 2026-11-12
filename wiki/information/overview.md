@@ -38,7 +38,7 @@ went stale when the English changed.
 
 ## How it is built
 
-Express on Node.js 20 or newer, CommonJS, with Sequelize over PostgreSQL in production
+Express on Node.js 20 or newer, written in strict TypeScript and compiled to CommonJS, with Sequelize over PostgreSQL in production
 and SQLite otherwise. The code is layered — `config`, `core`, `infrastructure`,
 `middleware`, `modules`, `routes`, `workers` — and a layer may call the one below it and
 never the reverse.

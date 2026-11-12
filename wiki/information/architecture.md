@@ -35,7 +35,7 @@ Account (USER)  --owns-->  Account (USER) namespace       role OWNER
 Account (USER)  --member-> Account (ORG)  namespace       role from org_members
 ```
 
-`src/modules/namespaces/namespace.service.js` is the only place this is decided.
+`src/modules/namespaces/namespace.service.ts` is the only place this is decided.
 Project and file access resolve upward to that same function, so no route can
 accidentally use a weaker rule.
 

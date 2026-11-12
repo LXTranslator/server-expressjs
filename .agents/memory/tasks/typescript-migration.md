@@ -21,7 +21,7 @@ checklist: latest dependencies and a clean audit, a strict `tsconfig.json` with
 | Decision | Reason |
 |---|---|
 | Source in ES module syntax, output in CommonJS | `module: NodeNext` without `"type": "module"` compiles `import` to `require`. Jest keeps running without the experimental VM modules flag, `__dirname` stays valid, and the worker thread path needs no loader in production. |
-| Jest stays, through `ts-jest` | The owner asked not to break the existing test framework. 600 tests are the proof that behaviour did not change. |
+| Jest stays, through `@swc/jest` | The owner asked not to break the existing test framework. 600 tests are the proof that behaviour did not change. Planned as `ts-jest`, which cannot run on TypeScript 7; see task 2. |
 | `tsx` for development | `npm run dev` watches the TypeScript source directly; production runs the compiled `dist/`. |
 | Types taken from the existing JSDoc first | Every exported function already documents its parameters and return value. Moving those into the signature keeps the documented contract and the checked one the same. |
 | No behaviour change | Every response, error, status and table definition stays identical. |
@@ -73,3 +73,47 @@ came from Jest's own tree and are pinned through `overrides`, recorded in
 delivers every field.
 
 Server suite: 600 passing across 19 suites, unchanged.
+
+### Task 3 — refactor/typescript
+
+Every file in `src/` and `tests/` renamed from `.js` to `.ts` with `git mv`, so history
+follows each file. `require` and `module.exports` became `import` and `export`: an object
+of names became named exports, anything else a default export. The output is still
+CommonJS, so `__dirname` needed no change. Two lazy `require` calls inside functions,
+used to break the `project.service` and `file.service` cycle, became top level imports,
+which CommonJS live bindings keep safe. The mailer keeps its lazy `require('nodemailer')`
+on purpose, typed through `import type`.
+
+`tsconfig.json` is strict with `ES2022`, `NodeNext`, `rootDir` `src`, `outDir` `dist`,
+declarations and source maps. `tsconfig.test.json` extends it to check the tests.
+Strict mode started at 1463 errors in `src` and 2091 in `tests`, and both reach zero
+without `// @ts-ignore` or `@ts-expect-error` anywhere. Types added along the way:
+attributes, instances and public JSON for every model; the provider neutral AI shapes
+in `infrastructure/ai/types.ts`; the OAuth adapter shape; the chat tool context and
+result; the Express request fields the middleware sets, in `src/types/express.d.ts`.
+Chat tools are declared through `defineTool`, an identity function that types each
+handler's arguments from the zod schema that validates them.
+
+The one route change is a rename: the file record moved from `req.file` to
+`req.fileRecord`, because multer owns `req.file`. Nothing a client sees changed.
+
+Test bodies are read through `ApiJson`, a loose record, the way a client reads a
+response. That and the test-only `as` casts on partial contexts are the only places
+an explicit loose type appears.
+
+`package.json`: `main` and `types` point at `dist/`, `build` is `tsc`, `start` builds and
+then runs `dist/index.js`, `dev` is `tsx watch`, and `npm test` type checks before Jest.
+The package has no `bin`, so there was none to move. The worker pool runs the compiled
+`translation.worker.js` when it exists and the `.ts` source through `tsx` otherwise, which
+is what lets the suite run without a build.
+
+`jest.config.js` stays JavaScript, since Jest reads it before any transform exists, and
+runs the `.ts` files through `@swc/jest`. The Dockerfile gained a build stage; the
+runtime image carries `dist/` and no compiler. Docker was not available in this
+environment, so the image itself was not built; the build stage's `npm ci
+--ignore-scripts` and `npm run build` were run on a clean copy and produce a `dist/` that
+loads.
+
+Checked: `npm run build` with zero errors, `npm run typecheck` with zero errors, 600 of
+600 tests across 19 suites, `npm audit` clean, `node dist/index.js` boots and translates
+an upload on the compiled worker, and `tsx src/index.ts` boots.

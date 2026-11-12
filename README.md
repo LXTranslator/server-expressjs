@@ -33,9 +33,13 @@ event loop.
 
 ```bash
 npm install
-npm start          # http://localhost:4000
+npm start          # compiles to dist/, then serves http://localhost:4000
 npm test
 ```
+
+The server is written in TypeScript under strict mode. `npm run build` compiles `src/`
+into `dist/`, `npm start` builds and then runs the compiled output, and `npm run dev`
+runs the sources directly with `tsx`, restarting on change.
 
 The server listens on port 4000 and stores data in a local SQLite file. Setting
 `PROD=true` switches it to PostgreSQL and requires real secrets.

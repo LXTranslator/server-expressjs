@@ -12,7 +12,7 @@ API that `LXTranslator/client-reactjs` consumes.
 
 ## Stack
 
-Node.js 20 or newer, CommonJS, Express, Sequelize. PostgreSQL when `PROD=true`, SQLite
+Node.js 20 or newer, strict TypeScript compiled to CommonJS, Express, Sequelize. PostgreSQL when `PROD=true`, SQLite
 otherwise. Translation work runs on worker threads. Jest and Supertest for tests, against
 an in memory database with only the AI provider substituted. Deployed as a multi stage
 Docker image running as an unprivileged user under `dumb-init`.
@@ -45,7 +45,7 @@ Three ways to prove an identity, and one gate they all pass through.
 * **github.com and gitlab.com**, link only. An identity nobody has linked is refused; no
   account is created and none is matched by email.
 
-`completeSignIn` in `src/modules/auth/auth.service.js` is the single gate. Both the
+`completeSignIn` in `src/modules/auth/auth.service.ts` is the single gate. Both the
 password path and the provider callback go through it, which is what makes the second
 factor apply to a provider sign in. A new sign in path that calls `issueAccessToken`
 directly would bypass the factor silently — that is the mistake to watch for.
@@ -57,14 +57,14 @@ Five tables carry it: `account_mfa`, `account_recovery_codes`, `mfa_challenges`,
 
 Written once and meant to be reused rather than copied again:
 
-* `requireAdmin` (`src/middleware/requireAdmin.js`) and `assertAdmin` for the
+* `requireAdmin` (`src/middleware/requireAdmin.ts`) and `assertAdmin` for the
   organization ADMIN check.
-* `src/infrastructure/ai/vendorRequest.js` for any call to an AI vendor.
+* `src/infrastructure/ai/vendorRequest.ts` for any call to an AI vendor.
 * `src/modules/chat/tools/` for assistant tool definitions, with `defineArguments`
-  declaring each argument once. `chat.tools.js` keeps the ordered list and the dispatcher.
-* `src/infrastructure/database/models/columns.js` for a key, a reference or
+  declaring each argument once. `chat.tools.ts` keeps the ordered list and the dispatcher.
+* `src/infrastructure/database/models/columns.ts` for a key, a reference or
   `created_at`.
-* `src/modules/auth/auth.http.js` for any route that starts a session.
+* `src/modules/auth/auth.http.ts` for any route that starts a session.
 
 ## The schema constraint that governs every future change here
 
